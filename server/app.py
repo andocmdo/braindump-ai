@@ -13,11 +13,11 @@ import uuid
 from flask import Flask, request, jsonify, send_from_directory
 from dotenv import load_dotenv
 
-from git_ops import GitOps
-from indexer import Indexer
-from embeddings import EmbeddingManager
-from llm import LLMManager
-from consolidation import ConsolidationManager
+from server.git_ops import GitOps
+from server.indexer import Indexer
+from server.embeddings import EmbeddingManager
+from server.llm import LLMManager
+from server.consolidation import ConsolidationManager
 
 load_dotenv()
 
@@ -486,7 +486,8 @@ def health_check():
 
 # --- Main ---
 
-if __name__ == '__main__':
+def main():
+    """Entry point for the Braindump server."""
     # Initialize git repo if needed
     if not git_ops.is_initialized():
         git_ops.initialize()
@@ -504,3 +505,7 @@ if __name__ == '__main__':
 
     print(f"Starting Braindump server on http://{host}:{port}")
     app.run(host=host, port=port, debug=debug)
+
+
+if __name__ == '__main__':
+    main()

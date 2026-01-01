@@ -18,6 +18,7 @@
 - **Frontend:** Vanilla JS, CodeMirror, CSS (dark theme)
 - **Storage:** Git repo (canonical), SQLite (derived index)
 - **LLM:** OpenRouter API (configurable, Anthropic support built-in)
+- **Package Management:** uv (see `pyproject.toml`)
 
 ## Phase 4 Implementation Details
 
