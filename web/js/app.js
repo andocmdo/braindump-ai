@@ -8,6 +8,7 @@ import { DocumentManager } from './documents.js';
 import { Editor } from './editor.js';
 import { TodoModal } from './todos.js';
 import { SearchManager } from './search.js';
+import { ConsolidationModal } from './consolidation.js';
 
 class App {
     constructor() {
@@ -16,6 +17,7 @@ class App {
         this.currentDocId = null;
         this.todoModal = null;
         this.searchManager = null;
+        this.consolidationModal = null;
     }
 
     async init() {
@@ -33,6 +35,20 @@ class App {
         // Initialize search
         this.searchManager = new SearchManager({
             onSelect: (docId) => this.openDocument(docId),
+        });
+
+        // Initialize consolidation modal
+        this.consolidationModal = new ConsolidationModal({
+            onAccept: (result) => {
+                console.log('Consolidation accepted:', result);
+                this.loadDocuments();
+                if (result.document_id) {
+                    this.openDocument(result.document_id);
+                }
+            },
+            onReject: () => {
+                console.log('Consolidation rejected');
+            },
         });
 
         // Bind UI events
@@ -57,6 +73,9 @@ class App {
 
         // TODOs button
         document.getElementById('btn-todos').addEventListener('click', () => this.todoModal.show());
+
+        // Consolidate button
+        document.getElementById('btn-consolidate').addEventListener('click', () => this.handleConsolidate());
 
         // Document list clicks (event delegation)
         document.getElementById('document-list').addEventListener('click', (e) => {
@@ -177,6 +196,22 @@ class App {
 
     handleTitleChange(title) {
         document.getElementById('editor-title').textContent = title || 'Untitled';
+    }
+
+    handleConsolidate() {
+        if (!this.currentDocId) {
+            alert('Please open a document first');
+            return;
+        }
+
+        // Save any pending changes first
+        if (this.editor.isDirty()) {
+            this.editor.forceSave().then(() => {
+                this.consolidationModal.consolidate(this.currentDocId);
+            });
+        } else {
+            this.consolidationModal.consolidate(this.currentDocId);
+        }
     }
 
     setSaveStatus(status) {

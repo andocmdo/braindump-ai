@@ -9,9 +9,11 @@
     "api_key": null
   },
   "llm": {
-    "provider": "anthropic",
-    "model": "claude-sonnet-4-20250514",
-    "api_key": "${ANTHROPIC_API_KEY}"
+    "provider": "openrouter",
+    "model": "anthropic/claude-3.5-sonnet",
+    "api_key": "${OPENROUTER_API_KEY}",
+    "site_url": "",
+    "site_name": "Braindump"
   },
   "server": {
     "port": 3000,

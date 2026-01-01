@@ -16,6 +16,8 @@ from dotenv import load_dotenv
 from git_ops import GitOps
 from indexer import Indexer
 from embeddings import EmbeddingManager
+from llm import LLMManager
+from consolidation import ConsolidationManager
 
 load_dotenv()
 
@@ -59,6 +61,26 @@ def get_embedding_manager():
         print("Initializing embedding manager...")
         embedding_manager = EmbeddingManager(config.get('embeddings', {}))
     return embedding_manager
+
+
+# Initialize LLM manager (lazy - only loads when consolidation is needed)
+llm_manager = None
+consolidation_manager = None
+
+def get_llm_manager():
+    """Get or initialize the LLM manager."""
+    global llm_manager
+    if llm_manager is None:
+        print("Initializing LLM manager...")
+        llm_manager = LLMManager(config.get('llm', {}))
+    return llm_manager
+
+def get_consolidation_manager():
+    """Get or initialize the consolidation manager."""
+    global consolidation_manager
+    if consolidation_manager is None:
+        consolidation_manager = ConsolidationManager(get_llm_manager(), git_ops)
+    return consolidation_manager
 
 # Initialize indexer (without embeddings initially for fast startup)
 indexer = Indexer(DB_PATH, REPO_PATH)
@@ -306,6 +328,147 @@ def index_stats():
     """Get index statistics."""
     stats = indexer.get_document_stats()
     return jsonify(stats)
+
+
+# --- Consolidation API ---
+
+@app.route('/api/consolidate', methods=['POST'])
+def consolidate_document():
+    """Start consolidation for one or more documents."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Request body required'}), 400
+
+    # Support single document or multiple documents
+    doc_ids = data.get('document_ids', [])
+    doc_id = data.get('document_id')
+
+    if doc_id:
+        doc_ids = [doc_id]
+
+    if not doc_ids:
+        return jsonify({'error': 'document_id or document_ids required'}), 400
+
+    # Read document contents
+    documents = []
+    for did in doc_ids:
+        filepath = REPO_PATH / f"{did}.md"
+        if not filepath.exists():
+            return jsonify({'error': f'Document not found: {did}'}), 404
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        documents.append((did, content))
+
+    try:
+        cm = get_consolidation_manager()
+
+        if len(documents) == 1:
+            result = cm.consolidate(documents[0][0], documents[0][1])
+        else:
+            result = cm.consolidate_multiple(documents)
+
+        diff = cm.generate_diff(result.original_content, result.consolidated_content)
+
+        return jsonify({
+            'branch_name': result.branch_name,
+            'document_id': result.document_id,
+            'created_at': result.created_at,
+            'diff': diff,
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/consolidate/proposals', methods=['GET'])
+def list_proposals():
+    """List all active consolidation proposals."""
+    cm = get_consolidation_manager()
+    proposals = cm.list_proposals()
+    return jsonify(proposals)
+
+
+@app.route('/api/consolidate/proposals/<branch_name>', methods=['GET'])
+def get_proposal(branch_name):
+    """Get a specific consolidation proposal."""
+    cm = get_consolidation_manager()
+    proposal = cm.get_proposal(branch_name)
+
+    if not proposal:
+        return jsonify({'error': 'Proposal not found'}), 404
+
+    diff = cm.generate_diff(proposal.original_content, proposal.consolidated_content)
+
+    return jsonify({
+        'branch_name': proposal.branch_name,
+        'document_id': proposal.document_id,
+        'created_at': proposal.created_at,
+        'diff': diff,
+    })
+
+
+@app.route('/api/consolidate/proposals/<branch_name>/accept', methods=['POST'])
+def accept_proposal(branch_name):
+    """Accept a consolidation proposal and apply the changes."""
+    cm = get_consolidation_manager()
+    proposal = cm.get_proposal(branch_name)
+
+    if not proposal:
+        return jsonify({'error': 'Proposal not found'}), 404
+
+    # Write the consolidated content back to the document
+    filepath = REPO_PATH / f"{proposal.document_id}.md"
+
+    # For merged documents, we might need to create a new file
+    if not filepath.exists():
+        # Create new merged document with timestamp
+        from datetime import datetime
+        import uuid as uuid_module
+        timestamp = datetime.now().strftime('%Y%m%d-%H%M%S')
+        short_id = str(uuid_module.uuid4())[:8]
+        filename = f"{timestamp}-{short_id}.md"
+        filepath = REPO_PATH / filename
+        doc_id = filepath.stem
+    else:
+        doc_id = proposal.document_id
+
+    # Write the consolidated content
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(proposal.consolidated_content)
+
+    # Git commit
+    git_ops.commit_file(filepath.name, f"Consolidate document: {doc_id}")
+
+    # Re-index the document
+    stat = filepath.stat()
+    indexer.index_document(
+        doc_id=doc_id,
+        filename=filepath.name,
+        content=proposal.consolidated_content,
+        created_at=stat.st_ctime,
+        modified_at=stat.st_mtime,
+        generate_embedding=False
+    )
+
+    # Remove from active proposals
+    cm.accept_proposal(branch_name)
+
+    return jsonify({
+        'success': True,
+        'document_id': doc_id,
+        'filename': filepath.name,
+    })
+
+
+@app.route('/api/consolidate/proposals/<branch_name>/reject', methods=['POST'])
+def reject_proposal(branch_name):
+    """Reject a consolidation proposal."""
+    cm = get_consolidation_manager()
+
+    if not cm.reject_proposal(branch_name):
+        return jsonify({'error': 'Proposal not found'}), 404
+
+    return jsonify({'success': True})
 
 
 # --- Health check ---
