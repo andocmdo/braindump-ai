@@ -224,6 +224,33 @@ class Indexer:
         ''', (doc_id,)).fetchall()
         return [dict(row) for row in rows]
 
+    def get_recent_completed_todos(self, hours: int = 24) -> list:
+        """Get TODOs marked as done from documents modified within the time window."""
+        from datetime import timedelta
+        cutoff = (datetime.now() - timedelta(hours=hours)).timestamp()
+
+        rows = self.conn.execute('''
+            SELECT t.*, d.title as document_title, d.filename, d.modified_at
+            FROM todos t
+            JOIN documents d ON t.document_id = d.id
+            WHERE t.is_done = 1 AND d.modified_at >= ?
+            ORDER BY d.modified_at DESC
+        ''', (cutoff,)).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_recent_documents(self, hours: int = 24) -> list:
+        """Get documents modified within the time window."""
+        from datetime import timedelta
+        cutoff = (datetime.now() - timedelta(hours=hours)).timestamp()
+
+        rows = self.conn.execute('''
+            SELECT id, filename, title, modified_at
+            FROM documents
+            WHERE modified_at >= ?
+            ORDER BY modified_at DESC
+        ''', (cutoff,)).fetchall()
+        return [dict(row) for row in rows]
+
     def get_all_questions(self, include_resolved: bool = False) -> list:
         """Get all unresolved questions."""
         query = '''
