@@ -11,6 +11,10 @@
 ## Remaining
 
 - [ ] **Phase 6: Polish** - PWA manifest/service worker, multi-device sync polling, UI refinements
+- [ ] **Phase 7: Settings Page** - User-configurable settings UI:
+  - Edit AI prompts used in consolidation and other LLM calls
+  - Adjust summary recency interval time
+  - Change API settings (model selection)
 
 ## Tech Stack
 
