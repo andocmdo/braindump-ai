@@ -1,0 +1,31 @@
+{
+  "storage": {
+    "git_repo_path": "./data/notes",
+    "sqlite_db_path": "./data/index.db"
+  },
+  "embeddings": {
+    "provider": "local",
+    "model": "all-MiniLM-L6-v2",
+    "api_key": null
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-20250514",
+    "api_key": "${ANTHROPIC_API_KEY}"
+  },
+  "server": {
+    "port": 3000,
+    "host": "0.0.0.0",
+    "debug": false
+  },
+  "sync": {
+    "poll_interval_seconds": 15
+  },
+  "index": {
+    "rebuild_debounce_seconds": 5
+  },
+  "ui": {
+    "default_view": "recent",
+    "autosave_delay_ms": 500
+  }
+}
