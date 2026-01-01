@@ -54,7 +54,7 @@ All content lives as markdown files in a git repository.
 
 - **Location:** Server-side git repo
 - **File format:** Markdown (.md)
-- **File naming:** Flat structure with UUID or timestamp-based names
+- **File naming:** Flat structure with names taken from the title of the note, but with UUID or timestamp appended to ensure conflict free saving of possibly similarly named notes
 - **History:** Full git history provides unlimited undo
 - **Diffs:** Git diff for reviewing proposed changes
 
@@ -94,7 +94,7 @@ A derived index for fast querying, rebuildable from the git repo at any time.
 
 ### Task Completion
 
-- Write `DONE` next to the item, or check a checkbox
+- Write `DONE` next to the item
 - Inline is authoritative—the master list reflects this automatically
 - Zombie tasks (old, unmarked) are surfaced in morning summary
 
@@ -115,7 +115,7 @@ A derived index for fast querying, rebuildable from the git repo at any time.
 2. AI processes content:
    - Cleans up formatting
    - Removes redundant information
-   - Identifies contradictions → inserts `[QUESTION: ...]` blocks
+   - Identifies contradictions or unclear statements → inserts `[QUESTION: ...]` blocks
    - Structures into standard format
    - Merges semantically similar content
 3. System creates a git branch with proposed changes
@@ -250,7 +250,7 @@ Default landing page when app opens. Displays:
 
 ### Process 1: Index Rebuild
 
-**Trigger:** On file save (debounced), or on-demand
+**Trigger:** On file save (debounced to a reasonable time period to prevent overload. This debounce interval should be configurable), or on-demand
 
 **Steps:**
 1. Scan git repo for all markdown files

@@ -29,15 +29,15 @@ Braindump is a low-friction capture system where I can quickly write notes (like
 7. Multi-device: Polling sync (~15s), last-write-wins with warning
 
 **Tech Decisions:**
-- Backend: Node.js or Python (your recommendation welcome)
+- Backend: Node.js or Python (your recommendation welcome, although leaning towards very simple/basic Python setup, prioritizing simplicity and readability, rather than performance or abstraction and complex code architecture)
 - Git operations: simple-git (Node) or gitpython (Python)
 - Embeddings: Configurable via config.json (local model or API)
 - LLM: Configurable (Claude API for consolidation)
-- Frontend: Lightweight - vanilla JS or Preact/Svelte
-- Diff viewer: Use existing library
+- Frontend: Lightweight - vanilla JS (or Preact/Svelte or similar if needed to achieve the technical requirements of the user interface)
+- Diff viewer: Use existing library (if possible and expedient).
 
 **File Structure:**
-- Flat file naming (UUID or timestamp-based) in git repo
+- Flat file naming (title of note + UUID or simple timestamp) in git repo
 - Standard note structure post-consolidation:
   - # Title
   - ## Summary
@@ -57,14 +57,19 @@ Braindump is a low-friction capture system where I can quickly write notes (like
 
 **Reference:**
 I have a previous attempt at: https://github.com/andocmdo/focus-notes
-Some UI patterns from there may be useful.
+Some UI patterns from there may be useful. Specifically the auto save feature, the clean and simple 
+tabs of documents and the text editing area. 
 
 Please start by:
 1. Recommending the tech stack (Node vs Python for backend, frontend framework choice)
 2. Proposing a project directory structure
 3. Creating the initial scaffolding
 
+You can always reference the braindump-spec.md in the current root folder of this project which contains all the above information (and sometimes more specific details).
+
 I'll be hosting this on my VPS. Let's build incrementally - get the basic capture and display working first, then add features.
+
+Please think deeply about implmenting this and then we will get started.
 ```
 
 ---
