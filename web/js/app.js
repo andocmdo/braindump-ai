@@ -6,12 +6,16 @@
 
 import { DocumentManager } from './documents.js';
 import { Editor } from './editor.js';
+import { TodoModal } from './todos.js';
+import { SearchManager } from './search.js';
 
 class App {
     constructor() {
         this.documents = new DocumentManager();
         this.editor = null;
         this.currentDocId = null;
+        this.todoModal = null;
+        this.searchManager = null;
     }
 
     async init() {
@@ -19,6 +23,16 @@ class App {
         this.editor = new Editor('editor', {
             onSave: (content) => this.handleSave(content),
             onTitleChange: (title) => this.handleTitleChange(title),
+        });
+
+        // Initialize TODO modal
+        this.todoModal = new TodoModal({
+            onNavigate: (docId, lineNumber) => this.navigateToLine(docId, lineNumber),
+        });
+
+        // Initialize search
+        this.searchManager = new SearchManager({
+            onSelect: (docId) => this.openDocument(docId),
         });
 
         // Bind UI events
@@ -40,6 +54,9 @@ class App {
 
         // Refresh button
         document.getElementById('btn-refresh').addEventListener('click', () => this.loadDocuments());
+
+        // TODOs button
+        document.getElementById('btn-todos').addEventListener('click', () => this.todoModal.show());
 
         // Document list clicks (event delegation)
         document.getElementById('document-list').addEventListener('click', (e) => {
@@ -64,6 +81,12 @@ class App {
                 if (this.currentDocId) {
                     this.editor.forceSave();
                 }
+            }
+
+            // Cmd/Ctrl + K: Focus search
+            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+                e.preventDefault();
+                document.getElementById('search-input').focus();
             }
         });
     }
@@ -100,7 +123,7 @@ class App {
         this.openDocument(doc.id);
     }
 
-    async openDocument(docId) {
+    async openDocument(docId, lineNumber = null) {
         // Save current document first if dirty
         if (this.currentDocId && this.editor.isDirty()) {
             await this.editor.forceSave();
@@ -118,12 +141,22 @@ class App {
 
         // Load content into editor
         this.editor.setContent(doc.content);
+
+        // Navigate to specific line if provided
+        if (lineNumber) {
+            this.editor.goToLine(lineNumber);
+        }
+
         this.editor.focus();
 
         // Update active state in list
         document.querySelectorAll('.document-item').forEach(item => {
             item.classList.toggle('active', item.dataset.id === docId);
         });
+    }
+
+    async navigateToLine(docId, lineNumber) {
+        await this.openDocument(docId, lineNumber);
     }
 
     async handleSave(content) {

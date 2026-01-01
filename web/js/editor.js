@@ -106,6 +106,13 @@ export class Editor {
         this.cm.focus();
     }
 
+    goToLine(lineNumber) {
+        // CodeMirror uses 0-based line numbers
+        const line = Math.max(0, lineNumber - 1);
+        this.cm.setCursor(line, 0);
+        this.cm.scrollIntoView({ line, ch: 0 }, 100);
+    }
+
     clear() {
         this.setContent('');
     }
