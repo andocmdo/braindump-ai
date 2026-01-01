@@ -308,6 +308,59 @@ def list_questions():
     return jsonify(questions)
 
 
+# --- Recent Summary API ---
+
+@app.route('/api/recent-summary', methods=['GET'])
+def recent_summary():
+    """Get a recent activity summary for the landing page."""
+    # Get recency window from config
+    recency_hours = config.get('summary', {}).get('recency_hours', 24)
+
+    # Get recently modified documents
+    recent_docs = indexer.get_recent_documents(hours=recency_hours)
+
+    # Get recently completed TODOs
+    completed_todos = indexer.get_recent_completed_todos(hours=recency_hours)
+
+    # Get all open TODOs sorted by age (oldest first for priority)
+    all_todos = indexer.get_all_todos(include_done=False)
+    # Sort by created_at ascending (oldest first)
+    all_todos.sort(key=lambda t: t.get('created_at', 0))
+
+    # Get open questions
+    questions = indexer.get_all_questions(include_resolved=False)
+
+    # Compute suggested next action (oldest open TODO)
+    suggested_next = None
+    if all_todos:
+        oldest_todo = all_todos[0]
+        suggested_next = {
+            'type': 'todo',
+            'todo': oldest_todo,
+            'reason': 'Oldest open task'
+        }
+
+    # Get stats
+    stats = indexer.get_document_stats()
+
+    return jsonify({
+        'summary_date': datetime.now().isoformat(),
+        'recency_hours': recency_hours,
+        'recent_activity': {
+            'documents_modified': recent_docs,
+            'documents_count': len(recent_docs),
+            'todos_completed': completed_todos,
+            'todos_completed_count': len(completed_todos),
+        },
+        'open_todos': all_todos[:10],  # Limit to first 10 for display
+        'open_todos_count': stats['open_todos'],
+        'suggested_next': suggested_next,
+        'open_questions': questions,
+        'open_questions_count': stats['open_questions'],
+        'stats': stats,
+    })
+
+
 # --- Index API ---
 
 @app.route('/api/index/rebuild', methods=['POST'])

@@ -9,6 +9,7 @@ import { Editor } from './editor.js';
 import { TodoModal } from './todos.js';
 import { SearchManager } from './search.js';
 import { ConsolidationModal } from './consolidation.js';
+import { RecentSummaryView } from './recent-summary.js';
 
 class App {
     constructor() {
@@ -18,6 +19,7 @@ class App {
         this.todoModal = null;
         this.searchManager = null;
         this.consolidationModal = null;
+        this.recentSummaryView = null;
     }
 
     async init() {
@@ -51,6 +53,11 @@ class App {
             },
         });
 
+        // Initialize recent summary view
+        this.recentSummaryView = new RecentSummaryView({
+            onNavigate: (docId, lineNumber) => this.navigateToLine(docId, lineNumber),
+        });
+
         // Bind UI events
         this.bindEvents();
 
@@ -59,6 +66,9 @@ class App {
 
         // Keyboard shortcuts
         this.bindKeyboardShortcuts();
+
+        // Show recent summary as default landing page
+        this.showSummary();
 
         console.log('Braindump initialized');
     }
@@ -70,6 +80,9 @@ class App {
 
         // Refresh button
         document.getElementById('btn-refresh').addEventListener('click', () => this.loadDocuments());
+
+        // Summary button
+        document.getElementById('btn-summary').addEventListener('click', () => this.showSummary());
 
         // TODOs button
         document.getElementById('btn-todos').addEventListener('click', () => this.todoModal.show());
@@ -142,6 +155,19 @@ class App {
         this.openDocument(doc.id);
     }
 
+    showSummary() {
+        // Hide editor and placeholder, show summary
+        this.currentDocId = null;
+        document.getElementById('editor-placeholder').classList.add('hidden');
+        document.getElementById('editor-container').classList.add('hidden');
+        this.recentSummaryView.show();
+
+        // Remove active state from document list
+        document.querySelectorAll('.document-item').forEach(item => {
+            item.classList.remove('active');
+        });
+    }
+
     async openDocument(docId, lineNumber = null) {
         // Save current document first if dirty
         if (this.currentDocId && this.editor.isDirty()) {
@@ -153,8 +179,9 @@ class App {
 
         this.currentDocId = docId;
 
-        // Update UI
+        // Update UI - hide summary and placeholder, show editor
         document.getElementById('editor-placeholder').classList.add('hidden');
+        this.recentSummaryView.hide();
         document.getElementById('editor-container').classList.remove('hidden');
         document.getElementById('editor-title').textContent = doc.title || 'Untitled';
 

@@ -22,6 +22,7 @@
             </div>
             <div class="top-bar-right">
                 <button id="btn-new" class="btn btn-primary" title="New fragment (Cmd+N)">+ New</button>
+                <button id="btn-summary" class="btn" title="View recent summary">Summary</button>
                 <button id="btn-todos" class="btn" title="View all TODOs">TODOs</button>
                 <button id="btn-consolidate" class="btn" title="Consolidate current document with AI">Consolidate</button>
             </div>
@@ -46,9 +47,12 @@
 
             <!-- Main Panel: Editor -->
             <section class="editor-panel">
-                <div id="editor-placeholder" class="editor-placeholder">
+                <div id="editor-placeholder" class="editor-placeholder hidden">
                     <p>Select a document or create a new one</p>
                     <button id="btn-new-placeholder" class="btn btn-primary">+ New Fragment</button>
+                </div>
+                <div id="recent-summary-view" class="recent-summary-view">
+                    <!-- Populated by JS -->
                 </div>
                 <div id="editor-container" class="editor-container hidden">
                     <div class="editor-header">
