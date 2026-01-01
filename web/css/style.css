@@ -250,6 +250,10 @@ html, body {
     color: var(--text-muted);
 }
 
+.editor-placeholder.hidden {
+    display: none;
+}
+
 .editor-container {
     flex: 1;
     display: flex;

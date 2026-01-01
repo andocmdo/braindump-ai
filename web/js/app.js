@@ -161,6 +161,9 @@ class App {
         // Load content into editor
         this.editor.setContent(doc.content);
 
+        // Refresh CodeMirror layout after container becomes visible
+        this.editor.refresh();
+
         // Navigate to specific line if provided
         if (lineNumber) {
             this.editor.goToLine(lineNumber);

@@ -116,4 +116,9 @@ export class Editor {
     clear() {
         this.setContent('');
     }
+
+    refresh() {
+        // Refresh CodeMirror layout - needed after container becomes visible
+        this.cm.refresh();
+    }
 }
