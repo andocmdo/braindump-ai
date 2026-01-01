@@ -11,6 +11,7 @@ ENV/
 
 # Data directory (runtime generated)
 data/
+.leann/
 
 # Config with secrets
 config.json
