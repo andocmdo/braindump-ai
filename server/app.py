@@ -524,6 +524,113 @@ def reject_proposal(branch_name):
     return jsonify({'success': True})
 
 
+# --- Config API ---
+
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    """Get current configuration (sanitized for UI)."""
+    # Create a sanitized copy of config
+    sanitized = {
+        'llm': {
+            'provider': config.get('llm', {}).get('provider', 'openrouter'),
+            'model': config.get('llm', {}).get('model', ''),
+            'site_url': config.get('llm', {}).get('site_url', ''),
+            'site_name': config.get('llm', {}).get('site_name', 'Braindump'),
+            'api_key_set': bool(config.get('llm', {}).get('api_key'))
+        },
+        'summary': {
+            'recency_hours': config.get('summary', {}).get('recency_hours', 24)
+        },
+        'sync': {
+            'poll_interval_seconds': config.get('sync', {}).get('poll_interval_seconds', 15)
+        },
+        'ui': {
+            'default_view': config.get('ui', {}).get('default_view', 'recent'),
+            'autosave_delay_ms': config.get('ui', {}).get('autosave_delay_ms', 500)
+        }
+    }
+    return jsonify(sanitized)
+
+
+@app.route('/api/config', methods=['PATCH'])
+def update_config():
+    """Update configuration."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Request body required'}), 400
+
+    # Update allowed fields
+    if 'llm' in data:
+        llm_data = data['llm']
+        if 'provider' in llm_data:
+            config.setdefault('llm', {})['provider'] = llm_data['provider']
+        if 'model' in llm_data:
+            config.setdefault('llm', {})['model'] = llm_data['model']
+        if 'site_url' in llm_data:
+            config.setdefault('llm', {})['site_url'] = llm_data['site_url']
+        if 'site_name' in llm_data:
+            config.setdefault('llm', {})['site_name'] = llm_data['site_name']
+        if 'api_key' in llm_data and llm_data['api_key']:
+            config.setdefault('llm', {})['api_key'] = llm_data['api_key']
+
+    if 'summary' in data:
+        if 'recency_hours' in data['summary']:
+            config.setdefault('summary', {})['recency_hours'] = int(data['summary']['recency_hours'])
+
+    if 'sync' in data:
+        if 'poll_interval_seconds' in data['sync']:
+            config.setdefault('sync', {})['poll_interval_seconds'] = int(data['sync']['poll_interval_seconds'])
+
+    if 'ui' in data:
+        if 'default_view' in data['ui']:
+            config.setdefault('ui', {})['default_view'] = data['ui']['default_view']
+        if 'autosave_delay_ms' in data['ui']:
+            config.setdefault('ui', {})['autosave_delay_ms'] = int(data['ui']['autosave_delay_ms'])
+
+    # Save config to file
+    with open(CONFIG_PATH, 'w') as f:
+        json.dump(config, f, indent=2)
+
+    # Reset LLM manager to pick up new config
+    global llm_manager, consolidation_manager
+    llm_manager = None
+    consolidation_manager = None
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/config/prompts', methods=['GET'])
+def get_prompts():
+    """Get consolidation prompts."""
+    from server.consolidation import CONSOLIDATION_SYSTEM_PROMPT, CONSOLIDATION_USER_PROMPT
+    return jsonify({
+        'system_prompt': CONSOLIDATION_SYSTEM_PROMPT,
+        'user_prompt': CONSOLIDATION_USER_PROMPT
+    })
+
+
+@app.route('/api/config/prompts', methods=['PATCH'])
+def update_prompts():
+    """Update consolidation prompts."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Request body required'}), 400
+
+    # Update prompts in the consolidation module
+    # This requires modifying the module globals
+    import server.consolidation as consolidation_module
+
+    if 'system_prompt' in data:
+        consolidation_module.CONSOLIDATION_SYSTEM_PROMPT = data['system_prompt']
+
+    if 'user_prompt' in data:
+        consolidation_module.CONSOLIDATION_USER_PROMPT = data['user_prompt']
+
+    # Note: These changes are only in memory. To persist, we'd need to write to a config file.
+    # For now, prompts are considered runtime configuration.
+    return jsonify({'success': True, 'note': 'Prompts updated in memory. Changes will reset on server restart.'})
+
+
 # --- Health check ---
 
 @app.route('/api/health', methods=['GET'])

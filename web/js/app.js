@@ -10,6 +10,7 @@ import { TodoModal } from './todos.js';
 import { SearchManager } from './search.js';
 import { ConsolidationModal } from './consolidation.js';
 import { RecentSummaryView } from './recent-summary.js';
+import { ConfigView } from './config.js';
 
 class App {
     constructor() {
@@ -20,6 +21,7 @@ class App {
         this.searchManager = null;
         this.consolidationModal = null;
         this.recentSummaryView = null;
+        this.configView = null;
     }
 
     async init() {
@@ -58,6 +60,9 @@ class App {
             onNavigate: (docId, lineNumber) => this.navigateToLine(docId, lineNumber),
         });
 
+        // Initialize config view
+        this.configView = new ConfigView();
+
         // Bind UI events
         this.bindEvents();
 
@@ -89,6 +94,9 @@ class App {
 
         // Consolidate button
         document.getElementById('btn-consolidate').addEventListener('click', () => this.handleConsolidate());
+
+        // Config button
+        document.getElementById('btn-config').addEventListener('click', () => this.configView.show());
 
         // Document list clicks (event delegation)
         document.getElementById('document-list').addEventListener('click', (e) => {

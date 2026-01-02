@@ -29,5 +29,8 @@
   "ui": {
     "default_view": "recent",
     "autosave_delay_ms": 500
+  },
+  "summary": {
+    "recency_hours": 24
   }
 }
