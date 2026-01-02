@@ -8,6 +8,7 @@ dependencies = [
     "flask>=3.1.2",
     "gitpython>=3.1.46",
     "httpx>=0.28.1",
+    "pillow>=12.1.0",
     "python-dotenv>=1.2.1",
     "sentence-transformers>=5.2.0",
 ]

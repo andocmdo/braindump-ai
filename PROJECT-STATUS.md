@@ -7,14 +7,13 @@
 - [x] **Phase 3: Semantic Search** - sentence-transformers embeddings, cosine similarity search, search dropdown UI with Cmd+K
 - [x] **Phase 4: Consolidation** - LLM integration (OpenRouter/Anthropic), consolidation API, side-by-side diff view, accept/reject flow
 - [x] **Phase 5: Recent Summary** - Activity queries, open TODOs, suggested next action, open questions, configurable recency interval, landing page view
+- [x] **Phase 6: PWA Support** - Progressive Web App with manifest, service worker, installable on mobile devices
+- [x] **Phase 7: Settings Page** - User-configurable settings UI with LLM config, prompts, and summary settings
 
 ## Remaining
 
-- [ ] **Phase 6: Polish** - PWA manifest/service worker, multi-device sync polling, UI refinements
-- [ ] **Phase 7: Settings Page** - User-configurable settings UI:
-  - Edit AI prompts used in consolidation and other LLM calls
-  - Adjust summary recency interval time
-  - Change API settings (model selection)
+- [ ] **Future: Multi-device Sync** - Polling for remote git changes, sync notifications
+- [ ] **Future: UI Refinements** - Additional polish and mobile optimizations as needed
 
 ## Tech Stack
 
@@ -84,3 +83,69 @@ Recency window is configurable in `config.json`:
 - **Recent Activity**: Documents modified and tasks completed in recency window
 - **Open Questions**: Aggregated [QUESTION:] blocks
 - **Click to Navigate**: All items navigate to source document/line
+
+## Phase 6 Implementation Details
+
+### PWA Support
+App is now installable as a Progressive Web App on mobile devices (Android/iOS).
+
+### New Files Created
+- `web/manifest.json` - PWA manifest with app metadata and icons
+- `web/service-worker.js` - Service worker for offline caching and PWA capabilities
+- `web/icons/icon-192.png` - App icon (192x192)
+- `web/icons/icon-512.png` - App icon (512x512)
+- `generate_icons.py` - Utility script to generate PWA icons
+
+### Files Modified
+- `web/index.html` - Added PWA meta tags, manifest link, and service worker registration
+- `pyproject.toml` - Added Pillow dependency for icon generation
+
+### Features
+- **Installable**: Can be installed on home screen (Android/iOS)
+- **Offline Support**: Service worker caches app shell and API responses
+- **App-like Experience**: Standalone display mode, custom theme colors
+- **Icons**: Custom Braindump icons for home screen
+
+### Installation
+On mobile devices:
+1. Open Braindump in browser (Chrome/Safari)
+2. Tap browser menu → "Add to Home Screen" or "Install App"
+3. App will be available as a standalone application
+
+## Phase 7 Implementation Details
+
+### Settings/Config Page
+User-configurable settings interface for customizing the app.
+
+### New Files Created
+- `web/js/config.js` - ConfigView class for settings modal
+
+### API Endpoints Added
+- `GET /api/config` - Get current configuration (sanitized)
+- `PATCH /api/config` - Update configuration settings
+- `GET /api/config/prompts` - Get consolidation prompts
+- `PATCH /api/config/prompts` - Update consolidation prompts
+
+### Files Modified
+- `server/app.py` - Added config API endpoints
+- `web/index.html` - Added Settings button
+- `web/js/app.js` - Integrated ConfigView
+- `web/css/style.css` - Added config modal styles
+- `config.example.json` - Added summary.recency_hours default
+
+### Configurable Settings
+- **LLM Configuration**:
+  - Provider (OpenRouter, Anthropic)
+  - Model selection
+  - API key
+  - Site name and URL
+- **Summary Settings**:
+  - Recency window (hours)
+- **Sync Settings**:
+  - Poll interval (seconds)
+- **Consolidation Prompts**:
+  - System prompt (AI instructions)
+  - User prompt template
+
+### Usage
+Click "Settings" button in top bar to open configuration modal. Changes to config are saved to `config.json`. Prompt changes are runtime-only and reset on server restart.
