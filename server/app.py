@@ -185,12 +185,15 @@ def logout():
 @app.route('/api/documents', methods=['GET'])
 @require_auth(auth_manager)
 def list_documents():
-    """List all documents, sorted by last modified (most recent first)."""
+    """List all documents, sorted by last modified (most recent first).
+    Excludes archived documents by default.
+    """
     documents = []
 
     if not REPO_PATH.exists():
         return jsonify([])
 
+    # Only list non-archived documents (files in root, not in archive folder)
     for md_file in REPO_PATH.glob('*.md'):
         stat = md_file.stat()
         # Read first line for title
@@ -205,6 +208,38 @@ def list_documents():
             'title': title,
             'modified': stat.st_mtime,
             'created': stat.st_ctime,
+        })
+
+    # Sort by modified time, newest first
+    documents.sort(key=lambda d: d['modified'], reverse=True)
+    return jsonify(documents)
+
+
+@app.route('/api/documents/archived', methods=['GET'])
+@require_auth(auth_manager)
+def list_archived_documents():
+    """List all archived documents."""
+    documents = []
+    archive_path = REPO_PATH / 'archive'
+
+    if not archive_path.exists():
+        return jsonify([])
+
+    for md_file in archive_path.glob('*.md'):
+        stat = md_file.stat()
+        # Read first line for title
+        with open(md_file, 'r', encoding='utf-8') as f:
+            first_line = f.readline().strip()
+            # Remove markdown heading prefix if present
+            title = first_line.lstrip('#').strip() or md_file.stem
+
+        documents.append({
+            'id': md_file.stem,
+            'filename': md_file.name,
+            'title': title,
+            'modified': stat.st_mtime,
+            'created': stat.st_ctime,
+            'archived': True,
         })
 
     # Sort by modified time, newest first
@@ -346,6 +381,46 @@ def delete_document(doc_id):
     return jsonify({'success': True})
 
 
+@app.route('/api/documents/<doc_id>/archive', methods=['POST'])
+@require_auth(auth_manager)
+def archive_document(doc_id):
+    """Archive a document by moving it to the archive folder."""
+    filepath = REPO_PATH / f"{doc_id}.md"
+
+    if not filepath.exists():
+        return jsonify({'error': 'Document not found'}), 404
+
+    # Move file to archive folder
+    filename = filepath.name
+    if not git_ops.move_to_archive(filename):
+        return jsonify({'error': 'Failed to archive document'}), 500
+
+    # Update index
+    indexer.archive_document(doc_id, f'archive/{filename}')
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/documents/<doc_id>/unarchive', methods=['POST'])
+@require_auth(auth_manager)
+def unarchive_document(doc_id):
+    """Unarchive a document by moving it back from the archive folder."""
+    filepath = REPO_PATH / 'archive' / f"{doc_id}.md"
+
+    if not filepath.exists():
+        return jsonify({'error': 'Archived document not found'}), 404
+
+    # Move file from archive folder
+    filename = filepath.name
+    if not git_ops.move_from_archive(filename):
+        return jsonify({'error': 'Failed to unarchive document'}), 500
+
+    # Update index
+    indexer.unarchive_document(doc_id, filename)
+
+    return jsonify({'success': True})
+
+
 # --- Search API ---
 
 @app.route('/api/search', methods=['GET'])
@@ -357,19 +432,20 @@ def search_documents():
         return jsonify({'error': 'Query parameter q is required'}), 400
 
     limit = request.args.get('limit', 10, type=int)
+    include_archived = request.args.get('include_archived', 'false').lower() == 'true'
 
     # Ensure embedding manager is initialized and connected to indexer
     em = get_embedding_manager()
     indexer.set_embedding_manager(em)
 
     # Check if we have embeddings, if not trigger generation
-    stats = indexer.get_document_stats()
+    stats = indexer.get_document_stats(include_archived=True)
     if stats['embeddings'] < stats['documents']:
         # Generate missing embeddings
         print(f"Generating embeddings for {stats['documents'] - stats['embeddings']} documents...")
         indexer.rebuild_index(generate_embeddings=True)
 
-    results = indexer.search_documents(query, limit=limit)
+    results = indexer.search_documents(query, limit=limit, include_archived=include_archived)
     return jsonify(results)
 
 

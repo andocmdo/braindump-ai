@@ -10,11 +10,13 @@
 - [x] **Phase 6: PWA Support** - Progressive Web App with manifest, service worker, installable on mobile devices
 - [x] **Phase 7: Settings Page** - User-configurable settings UI with LLM config, prompts, and summary settings
 - [x] **Phase 8: Authentication** - Password protection with session-based login, "remember me" functionality
+- [x] **Phase 9: Delete & Archive** - Document deletion with confirmation, archive functionality with folder-based storage
 
 ## Remaining
 
 - [ ] **Future: Multi-device Sync** - Polling for remote git changes, sync notifications
 - [ ] **Future: UI Refinements** - Additional polish and mobile optimizations as needed
+- [ ] **Future: Search Improvements** - Better search accuracy and ranking
 
 ## Tech Stack
 
@@ -151,6 +153,35 @@ User-configurable settings interface for customizing the app.
 ### Usage
 Click "Settings" button in top bar to open configuration modal. Changes to config are saved to `config.json`. Prompt changes are runtime-only and reset on server restart.
 
+## Phase 9 Implementation Details
+
+### Delete & Archive Functionality
+Document deletion with confirmation dialogs, and archive functionality using folder-based storage with SQLite metadata tracking.
+
+### Files Modified
+- `server/app.py` - Added archive/unarchive endpoints, archived documents list endpoint
+- `server/indexer.py` - Added archived column to documents table, migration logic, archive-aware queries
+- `server/git_ops.py` - Added move_to_archive and move_from_archive methods
+- `web/index.html` - Added delete/archive buttons to editor header, confirmation dialog
+- `web/css/style.css` - Added styles for delete/archive buttons, confirmation dialog, archived badge
+- `web/js/app.js` - Added delete/archive handlers, confirmation dialog logic
+- `web/js/documents.js` - Added archive/unarchive methods
+- `web/js/search.js` - Added "include archived" checkbox
+
+### API Endpoints Added
+- `POST /api/documents/<id>/archive` - Move document to archive folder
+- `POST /api/documents/<id>/unarchive` - Restore document from archive
+- `GET /api/documents/archived` - List all archived documents
+- `GET /api/search?include_archived=true` - Search with optional archived documents
+
+### Features
+- **Delete**: Removes document from git repo with confirmation dialog
+- **Archive**: Moves document to `archive/` folder in git repo
+- **Index Tracking**: SQLite tracks `archived` flag for each document
+- **Filtered Lists**: TODOs, questions, and document stats exclude archived by default
+- **Search Integration**: "Include archived" checkbox in search results
+- **Visual Indicators**: Archived badge shown in search results
+
 ## Phase 8 Implementation Details
 
 ### Password Protection & Authentication
@@ -199,3 +230,36 @@ Authentication settings in `config.json`:
 2. Login with your password - session will be remembered for 30 days
 3. To disable auth, set `"enabled": false` in config.json
 4. To reset password, delete `password_hash` from config.json and restart server
+
+## Browser Compatibility Notes
+
+### Safari Flexbox Fix (January 2026)
+
+**Issue:** Flex containers like `.editor-header-actions` and `.search-header-controls` displayed children stacked vertically in Safari, but correctly inline in Chrome.
+
+**Cause:** Safari requires older webkit prefixes for reliable flexbox behavior.
+
+**Solution:** Add webkit prefixes to flex containers. Example:
+
+```css
+.editor-header-actions {
+    display: -webkit-box;
+    display: -webkit-flex;
+    display: flex;
+    -webkit-box-orient: horizontal;
+    -webkit-box-direction: normal;
+    -webkit-flex-direction: row;
+    flex-direction: row;
+    -webkit-flex-wrap: nowrap;
+    flex-wrap: nowrap;
+    -webkit-box-align: center;
+    -webkit-align-items: center;
+    align-items: center;
+    gap: 8px;
+}
+```
+
+**Files Modified:**
+- `web/css/style.css` - Added webkit prefixes to `.editor-header-actions` and `.search-header-controls`
+
+**Key Takeaway:** When flexbox layouts break in Safari but work in Chrome, add `-webkit-box`, `-webkit-flex`, and related prefixes as fallbacks

@@ -23,6 +23,7 @@ class App {
         this.consolidationModal = null;
         this.recentSummaryView = null;
         this.configView = null;
+        this.confirmCallback = null;
     }
 
     async checkAuth() {
@@ -113,6 +114,17 @@ class App {
 
         // Config button
         document.getElementById('btn-config').addEventListener('click', () => this.configView.show());
+
+        // Delete button
+        document.getElementById('btn-delete').addEventListener('click', () => this.handleDelete());
+
+        // Archive button
+        document.getElementById('btn-archive').addEventListener('click', () => this.handleArchive());
+
+        // Confirm dialog
+        document.getElementById('confirm-cancel').addEventListener('click', () => this.hideConfirmDialog());
+        document.getElementById('confirm-ok').addEventListener('click', () => this.confirmAction());
+        document.querySelector('#confirm-modal .modal-backdrop').addEventListener('click', () => this.hideConfirmDialog());
 
         // Document list clicks (event delegation)
         document.getElementById('document-list').addEventListener('click', (e) => {
@@ -266,6 +278,83 @@ class App {
         } else {
             this.consolidationModal.consolidate(this.currentDocId);
         }
+    }
+
+    handleDelete() {
+        if (!this.currentDocId) {
+            alert('Please open a document first');
+            return;
+        }
+
+        const doc = this.documents.getCached(this.currentDocId);
+        const title = doc?.title || 'Untitled';
+
+        this.showConfirmDialog(
+            'Delete Document',
+            `Are you sure you want to delete "${title}"? This action cannot be undone.`,
+            'Delete',
+            async () => {
+                try {
+                    await this.documents.delete(this.currentDocId);
+                    this.currentDocId = null;
+                    this.showSummary();
+                    await this.loadDocuments();
+                } catch (error) {
+                    alert('Failed to delete document: ' + error.message);
+                }
+            }
+        );
+    }
+
+    handleArchive() {
+        if (!this.currentDocId) {
+            alert('Please open a document first');
+            return;
+        }
+
+        const doc = this.documents.getCached(this.currentDocId);
+        const title = doc?.title || 'Untitled';
+
+        this.showConfirmDialog(
+            'Archive Document',
+            `Are you sure you want to archive "${title}"? It will be moved to the archive and hidden from the main list.`,
+            'Archive',
+            async () => {
+                try {
+                    await this.documents.archive(this.currentDocId);
+                    this.currentDocId = null;
+                    this.showSummary();
+                    await this.loadDocuments();
+                } catch (error) {
+                    alert('Failed to archive document: ' + error.message);
+                }
+            },
+            false // not a danger action
+        );
+    }
+
+    showConfirmDialog(title, message, actionText, callback, isDanger = true) {
+        document.getElementById('confirm-title').textContent = title;
+        document.getElementById('confirm-message').textContent = message;
+
+        const okBtn = document.getElementById('confirm-ok');
+        okBtn.textContent = actionText;
+        okBtn.className = isDanger ? 'btn btn-danger' : 'btn btn-primary';
+
+        this.confirmCallback = callback;
+        document.getElementById('confirm-modal').classList.add('open');
+    }
+
+    hideConfirmDialog() {
+        document.getElementById('confirm-modal').classList.remove('open');
+        this.confirmCallback = null;
+    }
+
+    async confirmAction() {
+        if (this.confirmCallback) {
+            await this.confirmCallback();
+        }
+        this.hideConfirmDialog();
     }
 
     setSaveStatus(status) {

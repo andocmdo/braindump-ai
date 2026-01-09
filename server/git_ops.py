@@ -158,3 +158,50 @@ class GitOps:
             return list(files)
         except GitCommandError:
             return []
+
+    def move_to_archive(self, filename: str) -> bool:
+        """Move a file to the archive folder."""
+        if not self.repo:
+            return False
+
+        try:
+            # Ensure archive directory exists
+            archive_dir = self.repo_path / 'archive'
+            archive_dir.mkdir(exist_ok=True)
+
+            # Add archive folder to git if new
+            gitkeep = archive_dir / '.gitkeep'
+            if not gitkeep.exists():
+                gitkeep.touch()
+                self.repo.index.add(['archive/.gitkeep'])
+                self.repo.index.commit("Create archive folder")
+
+            # Move file using git mv (use relative paths)
+            source = self.repo_path / filename
+            if source.exists():
+                # Use relative paths for git mv
+                self.repo.git.mv(filename, f'archive/{filename}')
+                self.repo.index.commit(f"Archive: {filename}")
+                return True
+            return False
+        except GitCommandError as e:
+            print(f"Git move error: {e}")
+            return False
+
+    def move_from_archive(self, filename: str) -> bool:
+        """Move a file from the archive folder back to main."""
+        if not self.repo:
+            return False
+
+        try:
+            source = self.repo_path / 'archive' / filename
+
+            if source.exists():
+                # Use relative paths for git mv
+                self.repo.git.mv(f'archive/{filename}', filename)
+                self.repo.index.commit(f"Unarchive: {filename}")
+                return True
+            return False
+        except GitCommandError as e:
+            print(f"Git move error: {e}")
+            return False

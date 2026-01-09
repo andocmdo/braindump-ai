@@ -146,6 +146,22 @@ html, body {
     color: var(--text-primary);
 }
 
+.btn-icon.btn-danger:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--error);
+}
+
+.btn-danger {
+    background: var(--error);
+    border-color: var(--error);
+    color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background: #dc2626;
+    border-color: #dc2626;
+}
+
 /* Main Content */
 .main-content {
     display: flex;
@@ -272,6 +288,22 @@ html, body {
     padding: 12px 16px;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
+}
+
+.editor-header-actions {
+    display: -webkit-box;
+    display: -webkit-flex;
+    display: flex;
+    -webkit-box-orient: horizontal;
+    -webkit-box-direction: normal;
+    -webkit-flex-direction: row;
+    flex-direction: row;
+    -webkit-flex-wrap: nowrap;
+    flex-wrap: nowrap;
+    -webkit-box-align: center;
+    -webkit-align-items: center;
+    align-items: center;
+    gap: 8px;
 }
 
 .editor-title {
@@ -418,6 +450,8 @@ html, body {
     font-size: 13px;
     color: var(--text-secondary);
     cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .checkbox-label input[type="checkbox"] {
@@ -588,6 +622,22 @@ html, body {
     border-bottom: 1px solid var(--border);
 }
 
+.search-header-controls {
+    display: -webkit-box;
+    display: -webkit-flex;
+    display: flex;
+    -webkit-box-orient: horizontal;
+    -webkit-box-direction: normal;
+    -webkit-flex-direction: row;
+    flex-direction: row;
+    -webkit-flex-wrap: nowrap;
+    flex-wrap: nowrap;
+    -webkit-box-align: center;
+    -webkit-align-items: center;
+    align-items: center;
+    gap: 12px;
+}
+
 .search-results-title {
     font-size: 12px;
     font-weight: 600;
@@ -639,6 +689,19 @@ html, body {
     font-weight: 500;
     color: var(--text-primary);
     margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.archived-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 6px;
+    background: var(--text-muted);
+    color: var(--bg-primary);
+    border-radius: 3px;
+    text-transform: uppercase;
 }
 
 .search-result-snippet {
@@ -1304,4 +1367,23 @@ html, body {
     background: rgba(239, 68, 68, 0.1);
     color: var(--error);
     border: 1px solid var(--error);
+}
+
+/* Confirmation Dialog */
+.confirm-modal-content {
+    max-width: 400px;
+}
+
+.confirm-modal-content .modal-body {
+    padding: 24px 20px;
+}
+
+.confirm-modal-content .modal-body p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.confirm-modal-content .modal-footer {
+    gap: 12px;
 }

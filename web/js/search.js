@@ -18,6 +18,7 @@ export class SearchManager {
         this.resultsPanel = null;
         this.searchTimeout = null;
         this.isSearching = false;
+        this.includeArchived = false;
 
         this.init();
     }
@@ -34,11 +35,17 @@ export class SearchManager {
         this.resultsPanel.innerHTML = `
             <div class="search-results-header">
                 <span class="search-results-title">Search Results</span>
-                <button class="btn-icon search-close" title="Close">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M18 6L6 18M6 6l12 12"/>
-                    </svg>
-                </button>
+                <div class="search-header-controls">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="search-include-archived">
+                        Include archived
+                    </label>
+                    <button class="btn-icon search-close" title="Close">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
             </div>
             <div class="search-results-body">
                 <div class="search-results-list"></div>
@@ -49,6 +56,16 @@ export class SearchManager {
         // Close button
         this.resultsPanel.querySelector('.search-close').addEventListener('click', () => {
             this.hideResults();
+        });
+
+        // Include archived checkbox
+        const archivedCheckbox = this.resultsPanel.querySelector('#search-include-archived');
+        archivedCheckbox.addEventListener('change', (e) => {
+            this.includeArchived = e.target.checked;
+            // Re-run search with new setting if there's a query
+            if (this.searchInput.value.trim()) {
+                this.performSearch(this.searchInput.value.trim());
+            }
         });
 
         // Result clicks
@@ -128,7 +145,12 @@ export class SearchManager {
         this.showLoading();
 
         try {
-            const response = await fetch(`${API_BASE}/search?q=${encodeURIComponent(query)}&limit=10`);
+            const params = new URLSearchParams({
+                q: query,
+                limit: '10',
+                include_archived: this.includeArchived.toString()
+            });
+            const response = await fetch(`${API_BASE}/search?${params}`);
 
             if (!response.ok) {
                 throw new Error('Search failed');
@@ -167,8 +189,11 @@ export class SearchManager {
         }
 
         list.innerHTML = results.map((result, index) => `
-            <div class="search-result-item ${index === 0 ? 'selected' : ''}" data-id="${result.id}">
-                <div class="search-result-title">${this.escapeHtml(result.title)}</div>
+            <div class="search-result-item ${index === 0 ? 'selected' : ''}" data-id="${result.id}" data-archived="${result.archived ? 'true' : 'false'}">
+                <div class="search-result-title">
+                    ${this.escapeHtml(result.title)}
+                    ${result.archived ? '<span class="archived-badge">Archived</span>' : ''}
+                </div>
                 ${result.snippet ? `<div class="search-result-snippet">${this.escapeHtml(result.snippet)}</div>` : ''}
                 <div class="search-result-meta">
                     ${result.score ? `<span class="search-result-score">${Math.round(result.score * 100)}% match</span>` : ''}

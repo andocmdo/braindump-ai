@@ -45,7 +45,8 @@ class Indexer:
                 content_hash TEXT,
                 created_at REAL,
                 modified_at REAL,
-                indexed_at REAL
+                indexed_at REAL,
+                archived INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS todos (
@@ -84,6 +85,21 @@ class Indexer:
             CREATE INDEX IF NOT EXISTS idx_embeddings_hash ON embeddings(content_hash);
         ''')
         self.conn.commit()
+
+        # Migration: Add archived column if it doesn't exist (for existing databases)
+        self._migrate_add_archived_column()
+
+        # Create index on archived column (after migration ensures column exists)
+        self.conn.execute('CREATE INDEX IF NOT EXISTS idx_documents_archived ON documents(archived)')
+        self.conn.commit()
+
+    def _migrate_add_archived_column(self):
+        """Add archived column to documents table if it doesn't exist."""
+        cursor = self.conn.execute("PRAGMA table_info(documents)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'archived' not in columns:
+            self.conn.execute('ALTER TABLE documents ADD COLUMN archived INTEGER DEFAULT 0')
+            self.conn.commit()
 
     def set_embedding_manager(self, embedding_manager):
         """Set the embedding manager after initialization."""
@@ -203,15 +219,44 @@ class Indexer:
         # TODOs and questions are cascade deleted
         self.conn.commit()
 
-    def get_all_todos(self, include_done: bool = False) -> list:
+    def archive_document(self, doc_id: str, new_filename: str):
+        """Mark a document as archived and update its filename."""
+        self.conn.execute(
+            'UPDATE documents SET archived = 1, filename = ? WHERE id = ?',
+            (new_filename, doc_id)
+        )
+        self.conn.commit()
+
+    def unarchive_document(self, doc_id: str, new_filename: str):
+        """Mark a document as not archived and update its filename."""
+        self.conn.execute(
+            'UPDATE documents SET archived = 0, filename = ? WHERE id = ?',
+            (new_filename, doc_id)
+        )
+        self.conn.commit()
+
+    def get_archived_documents(self) -> list:
+        """Get all archived documents."""
+        rows = self.conn.execute('''
+            SELECT id, filename, title, modified_at, created_at
+            FROM documents
+            WHERE archived = 1
+            ORDER BY modified_at DESC
+        ''').fetchall()
+        return [dict(row) for row in rows]
+
+    def get_all_todos(self, include_done: bool = False, include_archived: bool = False) -> list:
         """Get all TODOs across all documents."""
         query = '''
             SELECT t.*, d.title as document_title, d.filename
             FROM todos t
             JOIN documents d ON t.document_id = d.id
+            WHERE 1=1
         '''
         if not include_done:
-            query += ' WHERE t.is_done = 0'
+            query += ' AND t.is_done = 0'
+        if not include_archived:
+            query += ' AND d.archived = 0'
         query += ' ORDER BY t.created_at DESC'
 
         rows = self.conn.execute(query).fetchall()
@@ -238,40 +283,67 @@ class Indexer:
         ''', (cutoff,)).fetchall()
         return [dict(row) for row in rows]
 
-    def get_recent_documents(self, hours: int = 24) -> list:
+    def get_recent_documents(self, hours: int = 24, include_archived: bool = False) -> list:
         """Get documents modified within the time window."""
         from datetime import timedelta
         cutoff = (datetime.now() - timedelta(hours=hours)).timestamp()
 
-        rows = self.conn.execute('''
+        query = '''
             SELECT id, filename, title, modified_at
             FROM documents
             WHERE modified_at >= ?
-            ORDER BY modified_at DESC
-        ''', (cutoff,)).fetchall()
+        '''
+        if not include_archived:
+            query += ' AND archived = 0'
+        query += ' ORDER BY modified_at DESC'
+
+        rows = self.conn.execute(query, (cutoff,)).fetchall()
         return [dict(row) for row in rows]
 
-    def get_all_questions(self, include_resolved: bool = False) -> list:
+    def get_all_questions(self, include_resolved: bool = False, include_archived: bool = False) -> list:
         """Get all unresolved questions."""
         query = '''
             SELECT q.*, d.title as document_title, d.filename
             FROM questions q
             JOIN documents d ON q.document_id = d.id
+            WHERE 1=1
         '''
         if not include_resolved:
-            query += ' WHERE q.is_resolved = 0'
+            query += ' AND q.is_resolved = 0'
+        if not include_archived:
+            query += ' AND d.archived = 0'
         query += ' ORDER BY q.created_at DESC'
 
         rows = self.conn.execute(query).fetchall()
         return [dict(row) for row in rows]
 
-    def get_document_stats(self) -> dict:
+    def get_document_stats(self, include_archived: bool = False) -> dict:
         """Get statistics about indexed documents."""
-        doc_count = self.conn.execute('SELECT COUNT(*) FROM documents').fetchone()[0]
-        todo_count = self.conn.execute('SELECT COUNT(*) FROM todos WHERE is_done = 0').fetchone()[0]
-        done_count = self.conn.execute('SELECT COUNT(*) FROM todos WHERE is_done = 1').fetchone()[0]
-        question_count = self.conn.execute('SELECT COUNT(*) FROM questions WHERE is_resolved = 0').fetchone()[0]
+        if include_archived:
+            doc_count = self.conn.execute('SELECT COUNT(*) FROM documents').fetchone()[0]
+            todo_count = self.conn.execute('SELECT COUNT(*) FROM todos WHERE is_done = 0').fetchone()[0]
+            done_count = self.conn.execute('SELECT COUNT(*) FROM todos WHERE is_done = 1').fetchone()[0]
+            question_count = self.conn.execute('SELECT COUNT(*) FROM questions WHERE is_resolved = 0').fetchone()[0]
+        else:
+            doc_count = self.conn.execute('SELECT COUNT(*) FROM documents WHERE archived = 0').fetchone()[0]
+            todo_count = self.conn.execute('''
+                SELECT COUNT(*) FROM todos t
+                JOIN documents d ON t.document_id = d.id
+                WHERE t.is_done = 0 AND d.archived = 0
+            ''').fetchone()[0]
+            done_count = self.conn.execute('''
+                SELECT COUNT(*) FROM todos t
+                JOIN documents d ON t.document_id = d.id
+                WHERE t.is_done = 1 AND d.archived = 0
+            ''').fetchone()[0]
+            question_count = self.conn.execute('''
+                SELECT COUNT(*) FROM questions q
+                JOIN documents d ON q.document_id = d.id
+                WHERE q.is_resolved = 0 AND d.archived = 0
+            ''').fetchone()[0]
+
         embedding_count = self.conn.execute('SELECT COUNT(*) FROM embeddings').fetchone()[0]
+        archived_count = self.conn.execute('SELECT COUNT(*) FROM documents WHERE archived = 1').fetchone()[0]
 
         return {
             'documents': doc_count,
@@ -279,21 +351,29 @@ class Indexer:
             'completed_todos': done_count,
             'open_questions': question_count,
             'embeddings': embedding_count,
+            'archived_documents': archived_count,
         }
 
-    def get_all_embeddings(self) -> list[tuple[str, list[float]]]:
+    def get_all_embeddings(self, include_archived: bool = False) -> list[tuple[str, list[float]]]:
         """Get all embeddings for search."""
-        rows = self.conn.execute('''
-            SELECT document_id, embedding FROM embeddings
-        ''').fetchall()
+        if include_archived:
+            rows = self.conn.execute('''
+                SELECT document_id, embedding FROM embeddings
+            ''').fetchall()
+        else:
+            rows = self.conn.execute('''
+                SELECT e.document_id, e.embedding FROM embeddings e
+                JOIN documents d ON e.document_id = d.id
+                WHERE d.archived = 0
+            ''').fetchall()
         return [(row['document_id'], json.loads(row['embedding'])) for row in rows]
 
-    def semantic_search(self, query: str, limit: int = 10) -> list:
+    def semantic_search(self, query: str, limit: int = 10, include_archived: bool = False) -> list:
         """Perform semantic search using embeddings."""
         if not self.embedding_manager:
             return []
 
-        embeddings = self.get_all_embeddings()
+        embeddings = self.get_all_embeddings(include_archived=include_archived)
         if not embeddings:
             return []
 
@@ -304,13 +384,16 @@ class Indexer:
         search_results = []
         for doc_id, score in results:
             doc = self.conn.execute('''
-                SELECT id, filename, title, modified_at FROM documents WHERE id = ?
+                SELECT id, filename, title, modified_at, archived FROM documents WHERE id = ?
             ''', (doc_id,)).fetchone()
             if doc:
                 result = dict(doc)
                 result['score'] = score
-                # Get a snippet of content
-                filepath = self.repo_path / f"{doc_id}.md"
+                # Get a snippet of content - check archive folder if archived
+                if result.get('archived'):
+                    filepath = self.repo_path / 'archive' / f"{doc_id}.md"
+                else:
+                    filepath = self.repo_path / f"{doc_id}.md"
                 if filepath.exists():
                     with open(filepath, 'r', encoding='utf-8') as f:
                         content = f.read()
@@ -337,7 +420,9 @@ class Indexer:
         indexed = 0
         total_todos = 0
         embeddings_generated = 0
+        archived_count = 0
 
+        # Index main documents
         for md_file in self.repo_path.glob('*.md'):
             stat = md_file.stat()
             with open(md_file, 'r', encoding='utf-8') as f:
@@ -356,29 +441,61 @@ class Indexer:
             if result.get('embedding_generated'):
                 embeddings_generated += 1
 
+        # Index archived documents
+        archive_path = self.repo_path / 'archive'
+        if archive_path.exists():
+            for md_file in archive_path.glob('*.md'):
+                stat = md_file.stat()
+                with open(md_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                result = self.index_document(
+                    doc_id=md_file.stem,
+                    filename=f'archive/{md_file.name}',
+                    content=content,
+                    created_at=stat.st_ctime,
+                    modified_at=stat.st_mtime,
+                    generate_embedding=generate_embeddings
+                )
+                # Mark as archived
+                self.conn.execute(
+                    'UPDATE documents SET archived = 1 WHERE id = ?',
+                    (md_file.stem,)
+                )
+                self.conn.commit()
+                indexed += 1
+                archived_count += 1
+                total_todos += result.get('todos_found', 0)
+                if result.get('embedding_generated'):
+                    embeddings_generated += 1
+
         return {
             'status': 'success',
             'documents_indexed': indexed,
+            'archived_documents': archived_count,
             'todos_found': total_todos,
             'embeddings_generated': embeddings_generated,
         }
 
-    def search_documents(self, query: str, limit: int = 20) -> list:
+    def search_documents(self, query: str, limit: int = 20, include_archived: bool = False) -> list:
         """Search documents - uses semantic search if available, falls back to text search."""
         # Try semantic search first
         if self.embedding_manager:
-            results = self.semantic_search(query, limit)
+            results = self.semantic_search(query, limit, include_archived=include_archived)
             if results:
                 return results
 
         # Fallback to simple text search
-        rows = self.conn.execute('''
-            SELECT id, filename, title, modified_at
+        base_query = '''
+            SELECT id, filename, title, modified_at, archived
             FROM documents
-            WHERE title LIKE ? OR filename LIKE ?
-            ORDER BY modified_at DESC
-            LIMIT ?
-        ''', (f'%{query}%', f'%{query}%', limit)).fetchall()
+            WHERE (title LIKE ? OR filename LIKE ?)
+        '''
+        if not include_archived:
+            base_query += ' AND archived = 0'
+        base_query += ' ORDER BY modified_at DESC LIMIT ?'
+
+        rows = self.conn.execute(base_query, (f'%{query}%', f'%{query}%', limit)).fetchall()
 
         return [dict(row) for row in rows]
 

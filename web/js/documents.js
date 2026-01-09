@@ -99,6 +99,37 @@ export class DocumentManager {
         }
     }
 
+    async archive(id) {
+        try {
+            const response = await fetch(`${API_BASE}/documents/${id}/archive`, {
+                method: 'POST',
+            });
+
+            if (!response.ok) throw new Error('Failed to archive document');
+
+            this.cache.delete(id);
+            return true;
+        } catch (error) {
+            console.error('Error archiving document:', error);
+            throw error;
+        }
+    }
+
+    async unarchive(id) {
+        try {
+            const response = await fetch(`${API_BASE}/documents/${id}/unarchive`, {
+                method: 'POST',
+            });
+
+            if (!response.ok) throw new Error('Failed to unarchive document');
+
+            return true;
+        } catch (error) {
+            console.error('Error unarchiving document:', error);
+            throw error;
+        }
+    }
+
     getCached(id) {
         return this.cache.get(id);
     }
