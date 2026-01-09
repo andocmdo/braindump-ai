@@ -369,7 +369,7 @@ class Indexer:
         return [(row['document_id'], json.loads(row['embedding'])) for row in rows]
 
     def semantic_search(self, query: str, limit: int = 10, include_archived: bool = False) -> list:
-        """Perform semantic search using embeddings."""
+        """Perform semantic search using embeddings with exact match boosting."""
         if not self.embedding_manager:
             return []
 
@@ -377,10 +377,13 @@ class Indexer:
         if not embeddings:
             return []
 
-        # Get search results
-        results = self.embedding_manager.search(query, embeddings, top_k=limit)
+        # Get search results (request more than limit to allow for re-ranking)
+        results = self.embedding_manager.search(query, embeddings, top_k=limit * 2)
 
-        # Fetch document details for results
+        # Prepare query terms for exact match boosting (lowercase, split by spaces)
+        query_terms = [term.lower() for term in query.split() if len(term) > 2]
+
+        # Fetch document details and apply exact match boosting
         search_results = []
         for doc_id, score in results:
             doc = self.conn.execute('''
@@ -388,12 +391,13 @@ class Indexer:
             ''', (doc_id,)).fetchone()
             if doc:
                 result = dict(doc)
-                result['score'] = score
-                # Get a snippet of content - check archive folder if archived
+                # Get content for snippet and exact match check
                 if result.get('archived'):
                     filepath = self.repo_path / 'archive' / f"{doc_id}.md"
                 else:
                     filepath = self.repo_path / f"{doc_id}.md"
+
+                content = ""
                 if filepath.exists():
                     with open(filepath, 'r', encoding='utf-8') as f:
                         content = f.read()
@@ -401,9 +405,33 @@ class Indexer:
                         result['snippet'] = content[:200].replace('\n', ' ').strip()
                         if len(content) > 200:
                             result['snippet'] += '...'
+
+                # Apply exact match boosting
+                content_lower = content.lower()
+                title_lower = (result.get('title') or '').lower()
+                boost = 0.0
+
+                for term in query_terms:
+                    # Strong boost for title matches
+                    if term in title_lower:
+                        boost += 0.15
+                    # Moderate boost for content matches
+                    if term in content_lower:
+                        boost += 0.10
+                        # Extra boost for multiple occurrences
+                        occurrences = content_lower.count(term)
+                        if occurrences > 1:
+                            boost += min(0.05 * (occurrences - 1), 0.15)
+
+                result['score'] = min(score + boost, 1.0)  # Cap at 1.0
+                result['semantic_score'] = score
+                result['boost'] = boost
                 search_results.append(result)
 
-        return search_results
+        # Re-sort by boosted score
+        search_results.sort(key=lambda x: x['score'], reverse=True)
+
+        return search_results[:limit]
 
     def rebuild_index(self, generate_embeddings: bool = True) -> dict:
         """Rebuild the entire index from the repository."""
@@ -485,19 +513,87 @@ class Indexer:
             if results:
                 return results
 
-        # Fallback to simple text search
+        # Fallback to content-based text search
+        return self._text_search(query, limit, include_archived)
+
+    def _text_search(self, query: str, limit: int = 20, include_archived: bool = False) -> list:
+        """Fallback text search that searches actual document content."""
+        # Get all documents
         base_query = '''
             SELECT id, filename, title, modified_at, archived
             FROM documents
-            WHERE (title LIKE ? OR filename LIKE ?)
         '''
         if not include_archived:
-            base_query += ' AND archived = 0'
-        base_query += ' ORDER BY modified_at DESC LIMIT ?'
+            base_query += ' WHERE archived = 0'
 
-        rows = self.conn.execute(base_query, (f'%{query}%', f'%{query}%', limit)).fetchall()
+        rows = self.conn.execute(base_query).fetchall()
 
-        return [dict(row) for row in rows]
+        query_lower = query.lower()
+        query_terms = [term for term in query_lower.split() if len(term) > 2]
+
+        results = []
+        for row in rows:
+            doc = dict(row)
+            doc_id = doc['id']
+
+            # Get file path
+            if doc.get('archived'):
+                filepath = self.repo_path / 'archive' / f"{doc_id}.md"
+            else:
+                filepath = self.repo_path / f"{doc_id}.md"
+
+            if not filepath.exists():
+                continue
+
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            content_lower = content.lower()
+            title_lower = (doc.get('title') or '').lower()
+
+            # Calculate a simple relevance score based on term occurrences
+            score = 0.0
+            matches = 0
+
+            for term in query_terms:
+                # Title matches are worth more
+                if term in title_lower:
+                    score += 0.3
+                    matches += 1
+                # Content matches
+                if term in content_lower:
+                    occurrences = content_lower.count(term)
+                    score += 0.1 + min(0.05 * occurrences, 0.2)
+                    matches += 1
+
+            # Also check for the full query phrase
+            if query_lower in content_lower:
+                score += 0.4
+                matches += 1
+
+            if matches > 0:
+                doc['score'] = score
+                # Get snippet around first match
+                idx = content_lower.find(query_lower if query_lower in content_lower else query_terms[0] if query_terms else '')
+                if idx >= 0:
+                    start = max(0, idx - 50)
+                    end = min(len(content), idx + 150)
+                    snippet = content[start:end].replace('\n', ' ').strip()
+                    if start > 0:
+                        snippet = '...' + snippet
+                    if end < len(content):
+                        snippet += '...'
+                    doc['snippet'] = snippet
+                else:
+                    doc['snippet'] = content[:200].replace('\n', ' ').strip()
+                    if len(content) > 200:
+                        doc['snippet'] += '...'
+                results.append(doc)
+
+        # Sort by score descending
+        results.sort(key=lambda x: x.get('score', 0), reverse=True)
+
+        return results[:limit]
 
     def close(self):
         """Close the database connection."""

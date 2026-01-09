@@ -16,7 +16,22 @@
 
 - [ ] **Future: Multi-device Sync** - Polling for remote git changes, sync notifications
 - [ ] **Future: UI Refinements** - Additional polish and mobile optimizations as needed
-- [ ] **Future: Search Improvements** - Better search accuracy and ranking
+- [ ] **Future: Hybrid Search (BM25 + Semantic)** - Full SQLite FTS5 integration for best-of-both-worlds search
+
+## Search Improvements (January 2026)
+
+### Changes Made
+- `server/embeddings.py` - Added `min_similarity` threshold (default 0.25) to filter low-quality semantic results
+- `server/indexer.py` - Added exact match boosting: title matches (+0.15), content matches (+0.10), multiple occurrences (up to +0.15 extra)
+- `server/indexer.py` - Fixed fallback text search to search actual document content (was only searching title/filename)
+- `server/indexer.py` - Added `_text_search()` method with relevance scoring and contextual snippets
+
+### How It Works
+1. Semantic search runs first with a minimum similarity threshold (0.25)
+2. Results are boosted based on exact term matches in title and content
+3. Multiple occurrences of search terms further boost the score
+4. If semantic search returns no results, fallback text search scans actual document content
+5. Snippets now show context around the matching term
 
 ## Tech Stack
 

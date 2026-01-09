@@ -104,7 +104,8 @@ class EmbeddingManager:
         b = np.array(b)
         return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
-    def search(self, query: str, embeddings: list[tuple[str, list[float]]], top_k: int = 10) -> list[tuple[str, float]]:
+    def search(self, query: str, embeddings: list[tuple[str, list[float]]],
+               top_k: int = 10, min_similarity: float = 0.25) -> list[tuple[str, float]]:
         """
         Search for similar documents.
 
@@ -112,6 +113,7 @@ class EmbeddingManager:
             query: The search query
             embeddings: List of (doc_id, embedding) tuples
             top_k: Number of results to return
+            min_similarity: Minimum similarity score to include in results (default 0.25)
 
         Returns:
             List of (doc_id, similarity_score) tuples, sorted by similarity
@@ -121,7 +123,9 @@ class EmbeddingManager:
         results = []
         for doc_id, doc_embedding in embeddings:
             similarity = self.cosine_similarity(query_embedding, doc_embedding)
-            results.append((doc_id, similarity))
+            # Only include results above the minimum threshold
+            if similarity >= min_similarity:
+                results.append((doc_id, similarity))
 
         # Sort by similarity (highest first)
         results.sort(key=lambda x: x[1], reverse=True)
