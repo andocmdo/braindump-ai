@@ -20,6 +20,7 @@ from server.embeddings import EmbeddingManager
 from server.llm import LLMManager
 from server.consolidation import ConsolidationManager
 from server.auth import AuthManager, require_auth
+from server.pending_commits import PendingCommitManager, commit_uncommitted_on_startup
 
 load_dotenv()
 
@@ -73,6 +74,12 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # Initialize git operations
 git_ops = GitOps(REPO_PATH)
+
+# Initialize pending commits manager for debounced git commits
+git_config = config.get('git', {})
+pending_commits = PendingCommitManager(
+    debounce_minutes=git_config.get('commit_debounce_minutes', 5)
+)
 
 # Initialize embedding manager (lazy - only loads model when needed)
 embedding_manager = None
@@ -251,6 +258,9 @@ def list_archived_documents():
 @require_auth(auth_manager)
 def create_document():
     """Create a new document."""
+    # Flush any old pending commits before this action
+    pending_commits.flush_if_ready(git_ops)
+
     data = request.get_json() or {}
     content = data.get('content', '')
 
@@ -321,6 +331,9 @@ def get_document(doc_id):
 @require_auth(auth_manager)
 def update_document(doc_id):
     """Update a document's content."""
+    # Flush any old pending commits before this action
+    pending_commits.flush_if_ready(git_ops)
+
     filepath = REPO_PATH / f"{doc_id}.md"
 
     if not filepath.exists():
@@ -336,8 +349,8 @@ def update_document(doc_id):
     with open(filepath, 'w', encoding='utf-8') as f:
         f.write(content)
 
-    # Git commit
-    git_ops.commit_file(filepath.name, "Update fragment")
+    # Mark file as pending commit (debounced - won't commit immediately)
+    pending_commits.mark_pending(filepath.name)
 
     # Re-index the document (embedding updated on next search or rebuild)
     stat = filepath.stat()
@@ -366,12 +379,18 @@ def update_document(doc_id):
 @require_auth(auth_manager)
 def delete_document(doc_id):
     """Delete a document."""
+    # Flush any old pending commits before this action
+    pending_commits.flush_if_ready(git_ops)
+
     filepath = REPO_PATH / f"{doc_id}.md"
 
     if not filepath.exists():
         return jsonify({'error': 'Document not found'}), 404
 
-    # Remove file and commit
+    # Clear from pending commits (if it was pending)
+    pending_commits.clear_file(filepath.name)
+
+    # Remove file and commit immediately (deletes should be committed right away)
     filepath.unlink()
     git_ops.commit_file(filepath.name, "Delete fragment", delete=True)
 
@@ -385,10 +404,16 @@ def delete_document(doc_id):
 @require_auth(auth_manager)
 def archive_document(doc_id):
     """Archive a document by moving it to the archive folder."""
+    # Flush any old pending commits before this action
+    pending_commits.flush_if_ready(git_ops)
+
     filepath = REPO_PATH / f"{doc_id}.md"
 
     if not filepath.exists():
         return jsonify({'error': 'Document not found'}), 404
+
+    # Clear from pending commits (if it was pending)
+    pending_commits.clear_file(filepath.name)
 
     # Move file to archive folder
     filename = filepath.name
@@ -727,6 +752,9 @@ def get_config():
         'ui': {
             'default_view': config.get('ui', {}).get('default_view', 'recent'),
             'autosave_delay_ms': config.get('ui', {}).get('autosave_delay_ms', 500)
+        },
+        'git': {
+            'commit_debounce_minutes': config.get('git', {}).get('commit_debounce_minutes', 5)
         }
     }
     return jsonify(sanitized)
@@ -767,6 +795,13 @@ def update_config():
             config.setdefault('ui', {})['default_view'] = data['ui']['default_view']
         if 'autosave_delay_ms' in data['ui']:
             config.setdefault('ui', {})['autosave_delay_ms'] = int(data['ui']['autosave_delay_ms'])
+
+    if 'git' in data:
+        if 'commit_debounce_minutes' in data['git']:
+            new_debounce = int(data['git']['commit_debounce_minutes'])
+            config.setdefault('git', {})['commit_debounce_minutes'] = new_debounce
+            # Update the pending commits manager
+            pending_commits.debounce_minutes = new_debounce
 
     # Save config to file
     with open(CONFIG_PATH, 'w') as f:
@@ -814,16 +849,39 @@ def update_prompts():
     return jsonify({'success': True, 'note': 'Prompts updated in memory. Changes will reset on server restart.'})
 
 
+# --- Pending Commits API ---
+
+@app.route('/api/git/pending', methods=['GET'])
+@require_auth(auth_manager)
+def get_pending_commits():
+    """Get status of pending git commits."""
+    stats = pending_commits.get_stats()
+    stats['debounce_minutes'] = pending_commits.debounce_minutes
+    return jsonify(stats)
+
+
+@app.route('/api/git/flush', methods=['POST'])
+@require_auth(auth_manager)
+def flush_pending_commits():
+    """Force flush all pending git commits."""
+    result = pending_commits.flush_all(git_ops)
+    if result:
+        return jsonify(result)
+    return jsonify({'committed': False, 'message': 'No pending commits'})
+
+
 # --- Health check ---
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
     stats = indexer.get_document_stats()
+    pending_stats = pending_commits.get_stats()
     return jsonify({
         'status': 'ok',
         'repo_initialized': git_ops.is_initialized(),
         'index_stats': stats,
+        'pending_commits': pending_stats,
     })
 
 
@@ -835,6 +893,11 @@ def main():
     if not git_ops.is_initialized():
         git_ops.initialize()
         print(f"Initialized git repository at {REPO_PATH}")
+
+    # Commit any uncommitted files from previous session
+    startup_commit = commit_uncommitted_on_startup(git_ops, REPO_PATH)
+    if startup_commit:
+        print(f"Committed {startup_commit['count']} uncommitted file(s) from previous session")
 
     # Rebuild index on startup (without embeddings for fast startup)
     print("Rebuilding index...")

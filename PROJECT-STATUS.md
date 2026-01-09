@@ -11,6 +11,7 @@
 - **Phase 7:** Settings Page - User-configurable LLM, prompts, and summary settings
 - **Phase 8:** Authentication - Password protection with session-based login
 - **Phase 9:** Delete & Archive - Document deletion, archive folder with SQLite tracking
+- **Phase 10:** Git Commit Debouncing - Action-triggered batched commits to reduce git history bloat
 
 ## Remaining
 
@@ -67,6 +68,20 @@ Set in `config.json` or via Settings page:
 
 First visit prompts password creation. To reset: delete `password_hash` from config.json.
 
+### Git Commit Debouncing
+
+Set in `config.json`:
+```json
+"git": {
+  "commit_debounce_minutes": 5
+}
+```
+
+Files are saved immediately but git commits are batched. Commits trigger when:
+- A new action occurs AND the oldest pending change is older than `commit_debounce_minutes`
+- Server restarts (any uncommitted files are committed on startup)
+- Manual flush via `POST /api/git/flush`
+
 ## Key API Endpoints
 
 | Endpoint | Description |
@@ -79,6 +94,8 @@ First visit prompts password creation. To reset: delete `password_hash` from con
 | `GET /api/recent-summary` | Landing page summary |
 | `POST /api/consolidate` | Start LLM consolidation |
 | `GET/PATCH /api/config` | Read/update settings |
+| `GET /api/git/pending` | Check pending commits status |
+| `POST /api/git/flush` | Force flush pending commits |
 
 ## Notes
 
