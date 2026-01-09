@@ -842,9 +842,10 @@ def main():
     print(f"Index rebuilt: {result['documents_indexed']} documents, {result['todos_found']} TODOs")
     print("Note: Embeddings will be generated on first search")
 
-    host = config['server'].get('host', '0.0.0.0')
-    port = config['server'].get('port', 3000)
-    debug = config['server'].get('debug', False)
+    # Environment variables override config file settings
+    host = os.environ.get('BRAINDUMP_HOST') or config['server'].get('host', '0.0.0.0')
+    port = int(os.environ.get('BRAINDUMP_PORT') or config['server'].get('port', 3000))
+    debug = os.environ.get('BRAINDUMP_DEBUG', '').lower() == 'true' or config['server'].get('debug', False)
 
     print(f"Starting Braindump server on http://{host}:{port}")
     app.run(host=host, port=port, debug=debug)
