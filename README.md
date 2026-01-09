@@ -8,7 +8,7 @@ A lightweight, git-backed personal knowledge base with AI-powered consolidation.
 
 - **Fast Capture**: Auto-saving markdown editor with instant document creation
 - **Semantic Search**: Find notes by meaning, not just keywords (powered by sentence-transformers)
-- **AI Consolidation**: Merge related notes intelligently using LLM (OpenRouter/Anthropic)
+- **AI Consolidation, Organization, and Summary**: Merge related notes intelligently using LLM (OpenRouter/Anthropic)
 - **TODO Tracking**: Automatic extraction and aggregation of TODOs across all documents
 - **Git-Backed**: Every change versioned in git with smart commit debouncing
 - **PWA Ready**: Install on mobile devices, works offline
@@ -68,10 +68,10 @@ See `config.example.json` for all options.
 
 ## Usage
 
-- **Cmd/Ctrl+K**: Open semantic search
+- **Dashboard**: Provides a full overview of recent activity, suggests next TODO tasks, displays open questions.
 - **New Document**: Click "New Document" or navigate to `/`
 - **View TODOs**: Click the TODO counter badge
-- **Consolidate**: Use the consolidate button to merge similar documents with AI
+- **Process**: Use the "Process" button to organize and summarize a messy note
 - **Archive**: Move old documents to the archive folder
 
 All changes are automatically committed to git with smart batching to keep history clean.
