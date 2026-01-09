@@ -11,6 +11,7 @@ import { SearchManager } from './search.js';
 import { ConsolidationModal } from './consolidation.js';
 import { RecentSummaryView } from './recent-summary.js';
 import { ConfigView } from './config.js';
+import { checkAuthStatus } from './api.js';
 
 class App {
     constructor() {
@@ -24,7 +25,22 @@ class App {
         this.configView = null;
     }
 
+    async checkAuth() {
+        const data = await checkAuthStatus();
+
+        if (!data.authenticated && data.auth_enabled) {
+            // Not authenticated, redirect to login
+            window.location.href = '/login.html';
+            return false;
+        }
+        return true;
+    }
+
     async init() {
+        // Check authentication first
+        if (!await this.checkAuth()) {
+            return;
+        }
         // Initialize editor
         this.editor = new Editor('editor', {
             onSave: (content) => this.handleSave(content),

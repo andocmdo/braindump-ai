@@ -10,14 +10,16 @@ from pathlib import Path
 from datetime import datetime
 import uuid
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, session
 from dotenv import load_dotenv
+from datetime import timedelta
 
 from server.git_ops import GitOps
 from server.indexer import Indexer
 from server.embeddings import EmbeddingManager
 from server.llm import LLMManager
 from server.consolidation import ConsolidationManager
+from server.auth import AuthManager, require_auth
 
 load_dotenv()
 
@@ -39,6 +41,27 @@ def load_config():
         raise FileNotFoundError("No config.json or config.example.json found")
 
 config = load_config()
+
+# Configure Flask session
+auth_config = config.get('auth', {})
+if auth_config.get('session_secret'):
+    app.secret_key = auth_config['session_secret']
+else:
+    # Generate and save a new secret key if not present
+    from server.auth import AuthManager
+    temp_auth = AuthManager({})
+    secret_key = temp_auth.generate_secret_key()
+    app.secret_key = secret_key
+    auth_config['session_secret'] = secret_key
+    config['auth'] = auth_config
+    # Save updated config
+    with open(CONFIG_PATH, 'w') as f:
+        json.dump(config, f, indent=2)
+
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)  # Remember for 30 days
+
+# Initialize auth manager
+auth_manager = AuthManager(auth_config)
 
 # Initialize paths
 REPO_PATH = Path(config['storage']['git_repo_path'])
@@ -94,9 +117,73 @@ def serve_index():
     return send_from_directory(app.static_folder, 'index.html')
 
 
+# --- Authentication API ---
+
+@app.route('/api/auth/status', methods=['GET'])
+def auth_status():
+    """Check authentication status and whether initial setup is needed."""
+    return jsonify({
+        'authenticated': auth_manager.is_authenticated(),
+        'auth_enabled': auth_manager.is_enabled(),
+        'needs_setup': auth_manager.needs_setup()
+    })
+
+
+@app.route('/api/auth/setup', methods=['POST'])
+def auth_setup():
+    """Set up initial password (only works if no password is set)."""
+    if auth_manager.password_hash is not None:
+        return jsonify({'error': 'Password already set'}), 400
+
+    data = request.get_json()
+    if not data or 'password' not in data:
+        return jsonify({'error': 'Password required'}), 400
+
+    password = data['password']
+    if len(password) < 4:
+        return jsonify({'error': 'Password must be at least 4 characters'}), 400
+
+    # Generate password hash
+    password_hash = auth_manager.set_password(password)
+
+    # Update config
+    config['auth']['password_hash'] = password_hash
+    with open(CONFIG_PATH, 'w') as f:
+        json.dump(config, f, indent=2)
+
+    # Update auth manager
+    auth_manager.password_hash = password_hash
+
+    # Log in automatically
+    auth_manager.login(password)
+
+    return jsonify({'success': True})
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Log in with password."""
+    data = request.get_json()
+    if not data or 'password' not in data:
+        return jsonify({'error': 'Password required'}), 400
+
+    if auth_manager.login(data['password']):
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Invalid password'}), 401
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    """Log out the current user."""
+    auth_manager.logout()
+    return jsonify({'success': True})
+
+
 # --- Document API ---
 
 @app.route('/api/documents', methods=['GET'])
+@require_auth(auth_manager)
 def list_documents():
     """List all documents, sorted by last modified (most recent first)."""
     documents = []
@@ -126,6 +213,7 @@ def list_documents():
 
 
 @app.route('/api/documents', methods=['POST'])
+@require_auth(auth_manager)
 def create_document():
     """Create a new document."""
     data = request.get_json() or {}
@@ -165,6 +253,7 @@ def create_document():
 
 
 @app.route('/api/documents/<doc_id>', methods=['GET'])
+@require_auth(auth_manager)
 def get_document(doc_id):
     """Get a single document by ID."""
     filepath = REPO_PATH / f"{doc_id}.md"
@@ -194,6 +283,7 @@ def get_document(doc_id):
 
 
 @app.route('/api/documents/<doc_id>', methods=['PUT'])
+@require_auth(auth_manager)
 def update_document(doc_id):
     """Update a document's content."""
     filepath = REPO_PATH / f"{doc_id}.md"
@@ -238,6 +328,7 @@ def update_document(doc_id):
 
 
 @app.route('/api/documents/<doc_id>', methods=['DELETE'])
+@require_auth(auth_manager)
 def delete_document(doc_id):
     """Delete a document."""
     filepath = REPO_PATH / f"{doc_id}.md"
@@ -258,6 +349,7 @@ def delete_document(doc_id):
 # --- Search API ---
 
 @app.route('/api/search', methods=['GET'])
+@require_auth(auth_manager)
 def search_documents():
     """Search documents using semantic search."""
     query = request.args.get('q', '').strip()
@@ -284,6 +376,7 @@ def search_documents():
 # --- TODO API ---
 
 @app.route('/api/todos', methods=['GET'])
+@require_auth(auth_manager)
 def list_todos():
     """List all TODOs across all documents."""
     include_done = request.args.get('include_done', 'false').lower() == 'true'
@@ -292,6 +385,7 @@ def list_todos():
 
 
 @app.route('/api/todos/stats', methods=['GET'])
+@require_auth(auth_manager)
 def todo_stats():
     """Get TODO statistics."""
     stats = indexer.get_document_stats()
@@ -301,6 +395,7 @@ def todo_stats():
 # --- Questions API ---
 
 @app.route('/api/questions', methods=['GET'])
+@require_auth(auth_manager)
 def list_questions():
     """List all unresolved questions."""
     include_resolved = request.args.get('include_resolved', 'false').lower() == 'true'
@@ -311,6 +406,7 @@ def list_questions():
 # --- Recent Summary API ---
 
 @app.route('/api/recent-summary', methods=['GET'])
+@require_auth(auth_manager)
 def recent_summary():
     """Get a recent activity summary for the landing page."""
     # Get recency window from config
@@ -364,6 +460,7 @@ def recent_summary():
 # --- Index API ---
 
 @app.route('/api/index/rebuild', methods=['POST'])
+@require_auth(auth_manager)
 def rebuild_index():
     """Rebuild the entire index from the repository."""
     generate_embeddings = request.args.get('embeddings', 'true').lower() == 'true'
@@ -377,6 +474,7 @@ def rebuild_index():
 
 
 @app.route('/api/index/stats', methods=['GET'])
+@require_auth(auth_manager)
 def index_stats():
     """Get index statistics."""
     stats = indexer.get_document_stats()
@@ -386,6 +484,7 @@ def index_stats():
 # --- Consolidation API ---
 
 @app.route('/api/consolidate', methods=['POST'])
+@require_auth(auth_manager)
 def consolidate_document():
     """Start consolidation for one or more documents."""
     data = request.get_json()
@@ -434,6 +533,7 @@ def consolidate_document():
 
 
 @app.route('/api/consolidate/proposals', methods=['GET'])
+@require_auth(auth_manager)
 def list_proposals():
     """List all active consolidation proposals."""
     cm = get_consolidation_manager()
@@ -442,6 +542,7 @@ def list_proposals():
 
 
 @app.route('/api/consolidate/proposals/<branch_name>', methods=['GET'])
+@require_auth(auth_manager)
 def get_proposal(branch_name):
     """Get a specific consolidation proposal."""
     cm = get_consolidation_manager()
@@ -461,6 +562,7 @@ def get_proposal(branch_name):
 
 
 @app.route('/api/consolidate/proposals/<branch_name>/accept', methods=['POST'])
+@require_auth(auth_manager)
 def accept_proposal(branch_name):
     """Accept a consolidation proposal and apply the changes."""
     cm = get_consolidation_manager()
@@ -514,6 +616,7 @@ def accept_proposal(branch_name):
 
 
 @app.route('/api/consolidate/proposals/<branch_name>/reject', methods=['POST'])
+@require_auth(auth_manager)
 def reject_proposal(branch_name):
     """Reject a consolidation proposal."""
     cm = get_consolidation_manager()
@@ -527,6 +630,7 @@ def reject_proposal(branch_name):
 # --- Config API ---
 
 @app.route('/api/config', methods=['GET'])
+@require_auth(auth_manager)
 def get_config():
     """Get current configuration (sanitized for UI)."""
     # Create a sanitized copy of config
@@ -553,6 +657,7 @@ def get_config():
 
 
 @app.route('/api/config', methods=['PATCH'])
+@require_auth(auth_manager)
 def update_config():
     """Update configuration."""
     data = request.get_json()
@@ -600,6 +705,7 @@ def update_config():
 
 
 @app.route('/api/config/prompts', methods=['GET'])
+@require_auth(auth_manager)
 def get_prompts():
     """Get consolidation prompts."""
     from server.consolidation import CONSOLIDATION_SYSTEM_PROMPT, CONSOLIDATION_USER_PROMPT
@@ -610,6 +716,7 @@ def get_prompts():
 
 
 @app.route('/api/config/prompts', methods=['PATCH'])
+@require_auth(auth_manager)
 def update_prompts():
     """Update consolidation prompts."""
     data = request.get_json()

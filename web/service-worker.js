@@ -1,11 +1,15 @@
-const CACHE_NAME = 'braindump-v1';
+const CACHE_NAME = 'braindump-v2';  // Incremented to bust cache
 const RUNTIME_CACHE = 'braindump-runtime';
 
 // Files to cache on install
 const PRECACHE_URLS = [
   '/',
+  '/login.html',
   '/css/style.css',
+  '/css/login.css',
   '/js/app.js',
+  '/js/api.js',
+  '/js/login.js',
   '/js/documents.js',
   '/js/editor.js',
   '/js/todos.js',
@@ -73,7 +77,30 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // Cache-first strategy for static assets
+  // Network-first strategy for HTML and JS files (to ensure auth updates work)
+  if (url.pathname.endsWith('.html') || url.pathname.endsWith('.js') || url.pathname === '/') {
+    event.respondWith(
+      fetch(request)
+        .then(response => {
+          // Don't cache non-successful responses
+          if (!response || response.status !== 200) {
+            return response;
+          }
+          // Clone and cache successful responses
+          const responseToCache = response.clone();
+          caches.open(CACHE_NAME)
+            .then(cache => cache.put(request, responseToCache));
+          return response;
+        })
+        .catch(() => {
+          // If network fails, try cache
+          return caches.match(request);
+        })
+    );
+    return;
+  }
+
+  // Cache-first strategy for other static assets (CSS, images, etc.)
   event.respondWith(
     caches.match(request)
       .then(cachedResponse => {

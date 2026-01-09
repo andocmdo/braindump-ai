@@ -32,5 +32,10 @@
   },
   "summary": {
     "recency_hours": 24
+  },
+  "auth": {
+    "enabled": true,
+    "password_hash": null,
+    "session_secret": null
   }
 }
