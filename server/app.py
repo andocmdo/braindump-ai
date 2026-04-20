@@ -17,7 +17,7 @@ from datetime import timedelta
 from server.git_ops import GitOps
 from server.indexer import Indexer
 from server.embeddings import EmbeddingManager
-from server.llm import LLMManager
+from server.llm import LLMManager, OpenRouterProvider, resolve_env_var
 from server.consolidation import ConsolidationManager
 from server.auth import AuthManager, require_auth
 from server.pending_commits import PendingCommitManager, commit_uncommitted_on_startup
@@ -451,7 +451,7 @@ def unarchive_document(doc_id):
 @app.route('/api/search', methods=['GET'])
 @require_auth(auth_manager)
 def search_documents():
-    """Search documents using semantic search."""
+    """Search documents using configured search mode (llm or local)."""
     query = request.args.get('q', '').strip()
     if not query:
         return jsonify({'error': 'Query parameter q is required'}), 400
@@ -459,14 +459,32 @@ def search_documents():
     limit = request.args.get('limit', 10, type=int)
     include_archived = request.args.get('include_archived', 'false').lower() == 'true'
 
-    # Ensure embedding manager is initialized and connected to indexer
+    search_mode = config.get('search', {}).get('mode', 'llm')
+
+    if search_mode == 'llm':
+        llm_config = config.get('llm', {})
+        api_key = resolve_env_var(llm_config.get('api_key', ''))
+        if not api_key:
+            return jsonify({'error': 'No API key configured for LLM search. Add an OpenRouter API key in Settings.'}), 503
+        search_model = config.get('search', {}).get('search_model', 'google/gemini-2.5-flash-lite')
+        provider = OpenRouterProvider(
+            model=search_model,
+            api_key=api_key,
+            site_url=llm_config.get('site_url', ''),
+            site_name=llm_config.get('site_name', 'Braindump'),
+        )
+        try:
+            results = indexer.llm_search(query, provider, limit=limit, include_archived=include_archived)
+        except RuntimeError as e:
+            return jsonify({'error': str(e)}), 502
+        return jsonify(results)
+
+    # Local semantic search (with embedding fallback to text search)
     em = get_embedding_manager()
     indexer.set_embedding_manager(em)
 
-    # Check if we have embeddings, if not trigger generation
     stats = indexer.get_document_stats(include_archived=True)
     if stats['embeddings'] < stats['documents']:
-        # Generate missing embeddings
         print(f"Generating embeddings for {stats['documents'] - stats['embeddings']} documents...")
         indexer.rebuild_index(generate_embeddings=True)
 
@@ -755,6 +773,10 @@ def get_config():
         },
         'git': {
             'commit_debounce_minutes': config.get('git', {}).get('commit_debounce_minutes', 5)
+        },
+        'search': {
+            'mode': config.get('search', {}).get('mode', 'llm'),
+            'search_model': config.get('search', {}).get('search_model', 'google/gemini-2.5-flash-lite'),
         }
     }
     return jsonify(sanitized)
@@ -800,8 +822,13 @@ def update_config():
         if 'commit_debounce_minutes' in data['git']:
             new_debounce = int(data['git']['commit_debounce_minutes'])
             config.setdefault('git', {})['commit_debounce_minutes'] = new_debounce
-            # Update the pending commits manager
             pending_commits.debounce_minutes = new_debounce
+
+    if 'search' in data:
+        if 'mode' in data['search']:
+            config.setdefault('search', {})['mode'] = data['search']['mode']
+        if 'search_model' in data['search']:
+            config.setdefault('search', {})['search_model'] = data['search']['search_model']
 
     # Save config to file
     with open(CONFIG_PATH, 'w') as f:

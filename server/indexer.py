@@ -505,6 +505,86 @@ class Indexer:
             'embeddings_generated': embeddings_generated,
         }
 
+    def llm_search(self, query: str, llm_provider, limit: int = 10, include_archived: bool = False) -> list:
+        """Search documents by passing all content to an LLM with a large context window."""
+        base_query = '''
+            SELECT id, filename, title, modified_at, archived
+            FROM documents
+        '''
+        if not include_archived:
+            base_query += ' WHERE archived = 0'
+        rows = self.conn.execute(base_query).fetchall()
+
+        if not rows:
+            return []
+
+        corpus_parts = []
+        for row in rows:
+            doc = dict(row)
+            doc_id = doc['id']
+            filepath = (
+                self.repo_path / 'archive' / f"{doc_id}.md"
+                if doc.get('archived')
+                else self.repo_path / f"{doc_id}.md"
+            )
+            if not filepath.exists():
+                continue
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            corpus_parts.append(f"[DOC_ID: {doc_id}]\nTitle: {doc.get('title', doc_id)}\n{content}")
+
+        corpus = "\n\n---\n\n".join(corpus_parts)
+
+        estimated_tokens = len(corpus) / 4
+        if estimated_tokens > 750_000:
+            print(f"WARNING: LLM search corpus is very large (~{estimated_tokens:.0f} estimated tokens). Results may be truncated.")
+
+        system_prompt = (
+            "You are a document search assistant. Given a collection of notes and a search query, "
+            "find all relevant documents.\n"
+            "Return ONLY a JSON array of results, ordered by relevance (most relevant first). "
+            "For each result include:\n"
+            "- doc_id: the document ID from [DOC_ID: ...]\n"
+            "- relevance_score: float between 0 and 1\n"
+            "- snippet: a short relevant excerpt (max 200 chars)\n\n"
+            "If no documents are relevant, return an empty array [].\n"
+            "Return only the raw JSON array with no markdown, no explanation."
+        )
+        user_prompt = f'Search query: "{query}"\n\nDocuments:\n---\n{corpus}\n---\n\nReturn the JSON array of relevant results.'
+
+        response = llm_provider.complete(user_prompt, system=system_prompt, max_tokens=2048)
+
+        response = response.strip()
+        if response.startswith('```'):
+            lines = response.split('\n')
+            end = -1 if lines[-1].strip() == '```' else len(lines)
+            response = '\n'.join(lines[1:end])
+
+        try:
+            llm_results = json.loads(response)
+        except json.JSONDecodeError:
+            raise RuntimeError(f"LLM search returned invalid JSON: {response[:300]}")
+
+        if not isinstance(llm_results, list):
+            raise RuntimeError("LLM search returned unexpected format (not a list)")
+
+        results = []
+        for item in llm_results[:limit]:
+            doc_id = item.get('doc_id')
+            if not doc_id:
+                continue
+            doc = self.conn.execute(
+                'SELECT id, filename, title, modified_at, archived FROM documents WHERE id = ?',
+                (doc_id,)
+            ).fetchone()
+            if doc:
+                result = dict(doc)
+                result['score'] = float(item.get('relevance_score', 0.5))
+                result['snippet'] = item.get('snippet', '')
+                results.append(result)
+
+        return results
+
     def search_documents(self, query: str, limit: int = 20, include_archived: bool = False) -> list:
         """Search documents - uses semantic search if available, falls back to text search."""
         # Try semantic search first

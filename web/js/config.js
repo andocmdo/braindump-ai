@@ -80,6 +80,23 @@ export class ConfigView {
                     </div>
 
                     <div class="config-section">
+                        <h3>Search Settings</h3>
+                        <div class="form-group">
+                            <label for="search-mode">Search Mode</label>
+                            <select id="search-mode">
+                                <option value="llm">LLM Search (recommended)</option>
+                                <option value="local">Local Semantic Search</option>
+                            </select>
+                            <small>LLM Search passes all notes to an AI model for accurate full-text and semantic search</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="search-model">Search Model</label>
+                            <input type="text" id="search-model" placeholder="google/gemini-2.5-flash-lite">
+                            <small>OpenRouter model ID used for LLM Search (requires a large context window)</small>
+                        </div>
+                    </div>
+
+                    <div class="config-section">
                         <h3>Summary Settings</h3>
                         <div class="form-group">
                             <label for="summary-recency">Recency Window (hours)</label>
@@ -157,6 +174,10 @@ export class ConfigView {
             apiKeyStatus.style.color = '#e74c3c';
         }
 
+        // Search config
+        document.getElementById('search-mode').value = this.config.search.mode;
+        document.getElementById('search-model').value = this.config.search.search_model;
+
         // Summary config
         document.getElementById('summary-recency').value = this.config.summary.recency_hours;
 
@@ -177,6 +198,10 @@ export class ConfigView {
                     model: document.getElementById('llm-model').value,
                     site_name: document.getElementById('llm-site-name').value,
                     site_url: document.getElementById('llm-site-url').value,
+                },
+                search: {
+                    mode: document.getElementById('search-mode').value,
+                    search_model: document.getElementById('search-model').value,
                 },
                 summary: {
                     recency_hours: parseInt(document.getElementById('summary-recency').value)

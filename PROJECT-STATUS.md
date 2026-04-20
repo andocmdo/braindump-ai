@@ -12,6 +12,7 @@
 - **Phase 8:** Authentication - Password protection with session-based login
 - **Phase 9:** Delete & Archive - Document deletion, archive folder with SQLite tracking
 - **Phase 10:** Git Commit Debouncing - Action-triggered batched commits to reduce git history bloat
+- **Phase 11:** LLM Search - Full-corpus search via large-context LLM (google/gemini-2.5-flash-lite default), configurable mode (llm/local) and search model in Settings
 
 ## Remaining
 

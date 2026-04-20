@@ -30,6 +30,10 @@
     "default_view": "recent",
     "autosave_delay_ms": 500
   },
+  "search": {
+    "mode": "llm",
+    "search_model": "google/gemini-2.5-flash-lite"
+  },
   "summary": {
     "recency_hours": 24
   },
