@@ -78,11 +78,9 @@ export class SearchManager {
     }
 
     bindEvents() {
-        // Search input - clear results when emptied
-        this.searchInput.addEventListener('input', (e) => {
-            if (!e.target.value.trim()) {
-                this.hideResults();
-            }
+        // Search input - clear stale results whenever user types
+        this.searchInput.addEventListener('input', () => {
+            this.hideResults();
         });
 
         // Focus/blur
