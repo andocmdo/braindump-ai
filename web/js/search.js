@@ -10,13 +10,11 @@ export class SearchManager {
     constructor(options = {}) {
         this.options = {
             onSelect: () => {},
-            debounceMs: 300,
             ...options
         };
 
         this.searchInput = null;
         this.resultsPanel = null;
-        this.searchTimeout = null;
         this.isSearching = false;
         this.includeArchived = false;
 
@@ -80,22 +78,11 @@ export class SearchManager {
     }
 
     bindEvents() {
-        // Search input
+        // Search input - clear results when emptied
         this.searchInput.addEventListener('input', (e) => {
-            const query = e.target.value.trim();
-
-            if (this.searchTimeout) {
-                clearTimeout(this.searchTimeout);
-            }
-
-            if (!query) {
+            if (!e.target.value.trim()) {
                 this.hideResults();
-                return;
             }
-
-            this.searchTimeout = setTimeout(() => {
-                this.performSearch(query);
-            }, this.options.debounceMs);
         });
 
         // Focus/blur
@@ -127,12 +114,17 @@ export class SearchManager {
                 e.preventDefault();
                 this.navigateResults(e.key === 'ArrowDown' ? 1 : -1);
             } else if (e.key === 'Enter') {
+                e.preventDefault();
                 const selected = this.resultsPanel.querySelector('.search-result-item.selected');
                 if (selected) {
-                    e.preventDefault();
                     this.hideResults();
                     this.searchInput.value = '';
                     this.options.onSelect(selected.dataset.id);
+                } else {
+                    const query = this.searchInput.value.trim();
+                    if (query) {
+                        this.performSearch(query);
+                    }
                 }
             }
         });
